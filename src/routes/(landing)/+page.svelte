@@ -1,75 +1,95 @@
 <script lang="ts">
+    import { enhance } from "$app/forms";
+    import { page } from "$app/state";
+    
+    let errorMessage = $state('');
+    let file: File | null = $state(null);
 
-    import { PUBLIC_MAX_FILE_SIZE } from '$env/static/public';
-    import { enhance } from '$app/forms';
-    const MAX_UPLOAD_SIZE = parseInt(PUBLIC_MAX_FILE_SIZE)
+    let name = $state('');
+    let size = $state(0);
+    let type = $state('');
+    let checksum = $state('');
 
-    let file: File | null = null;
-    let errors: string[] = [];
+    let code = $state('');
 
-    let createForm: HTMLFormElement;
-
-    function handleFileChange(event: Event) {
+    async function handleFileChange(event: Event) {
         const input = event.target as HTMLInputElement;
         if (input.files && input.files.length > 0) {
             file = input.files[0];
-            errors = [];
+        }
 
-            if (file.size > MAX_UPLOAD_SIZE) {
-                errors.push(`File size exceeds the maximum limit of ${MAX_UPLOAD_SIZE / (1024 * 1024)} MB.`);
-                file = null;
-            }
+        if (file) {
+            name = file.name;
+            size = file.size;
+            type = file.type;
 
+            const fileBuffer = await file.arrayBuffer();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        } else {
+            name = '';
+            size = 0;
+            type = '';
+            checksum = '';
         }
     }
 
 </script>
 
-
-<form action="?/create" method="post" use:enhance={async ({ formData })=>{
+<form action="?/create" method="post" use:enhance={async ({ formData }) => {
 
     if (!file) {
-        errors.push('No file selected.');
+        errorMessage = 'Please select a file to transfer.';
         return;
     }
 
-    const checksum = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-    const hashArray = Array.from(new Uint8Array(checksum));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    formData.delete('file');
+    formData.append('name', name);
+    formData.append('size', size.toString());
+    formData.append('type', type);
+    formData.append('checksum', checksum);
 
-    formData.append('name', file.name);
-    formData.append('size', file.size.toString());
-    formData.append('type', file.type);
-    formData.append('checksum', hashHex);
-
-    return async ({ result }) => {
+    return ({ result }) => {
         if (result.type === 'success') {
-            console.log(result)
-        } else {
-            errors.push('An unexpected error occurred. Please try again.');
-        }
+            code = result.data.code;
+            errorMessage = '';
+        } else if (result.type === 'error') {
+            errorMessage = result.data?.error || 'An unknown error occurred.';
     }
 
+}}} class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col gap-4">
 
+    <div class="flex flex-col">
+        <label for="file" class="block text-sm font-medium text-gray-700 mb-2">Select a file to transfer:</label>
+        <input type="file" oninput={handleFileChange} id="file">
+    </div>
 
-}}>
+    {#if file}
+        <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <p class="text-sm text-gray-800"><span class="font-medium">Filename:</span> {file.name}</p>
+            <p class="text-sm text-gray-800"><span class="font-medium">Size:</span> {Math.round(file.size / 1024)} KB</p>
+            <p class="text-sm text-gray-800"><span class="font-medium">Type:</span> {file.type || 'N/A'}</p>
+            <p class="text-sm text-gray-800"><span class="font-medium">SHA-256 Checksum:</span> {checksum}</p>
+        </div>
+    {/if}
 
-    <input type="file" on:change={handleFileChange} />
-
-    <button disabled={!file}>
-        Create Transfer Link
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+        Transfer a file
     </button>
 
+    {#if code}
+        <div class="p-4 bg-green-50 border border-green-200 rounded-lg">
+            <p class="text-sm text-green-800">File transfer created! Share this link with the recipient:</p>
+            <p class="mt-2 text-lg font-mono text-green-900">
+                {page.url.origin}/{code}
+            </p>
+        </div>
+    {/if}
+
+    {#if errorMessage}
+        <p class="text-red-600 mt-4">{errorMessage}</p>
+    {/if}
+
 </form>
-
-{#if errors.length > 0}
-    <ul class="text-red-500">
-        {#each errors as error}
-            <li>{error}</li>
-        {/each}
-    </ul>
-{/if}
-
-{#if file}
-    <p>Selected file: {file.name} ({(file.size / (1024 * 1024)).toFixed(2)} MB)</p>
-{/if}

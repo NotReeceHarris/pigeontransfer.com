@@ -1,11 +1,11 @@
-import { pgTable, serial, varchar, bigint, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, bigint, timestamp, integer, boolean } from 'drizzle-orm/pg-core';
 
 export const transfer = pgTable('transfer', {
 	id: serial('id').primaryKey(),
-	code: varchar('code', { length: 6 }).notNull(),
+	code: varchar('code', { length: 6 }).notNull().unique(),
 
 	/* Meta Data */
-	bytes: bigint({ mode: 'bigint' }).notNull(),
+	bytes: bigint('bytes', { mode: 'bigint' }).notNull(),
 	filename: varchar('filename', { length: 255 }).notNull(),
 	mimeType: varchar('mime_type', { length: 255 }).notNull(),
 	
@@ -13,6 +13,10 @@ export const transfer = pgTable('transfer', {
 	password: varchar('password', { length: 97 }),
 	maxRecipients: integer('max_recipients').notNull().default(1),
 	checksum: varchar('checksum', { length: 64 }).notNull(),
+	
+	/* P2P Connection Status */
+	downloadsCompleted: integer('downloads_completed').notNull().default(0),
 
-	createdAt: timestamp().defaultNow().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	expiresAt: timestamp('expires_at').notNull(),
 });
