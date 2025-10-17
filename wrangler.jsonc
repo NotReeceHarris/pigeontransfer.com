@@ -5,5 +5,10 @@
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
-	}
+	},
+    "env": {
+        "production": {
+            "DATABASE_URL": "${DATABASE_URL}"
+        }
+    }
 }
