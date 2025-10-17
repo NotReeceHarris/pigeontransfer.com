@@ -9,7 +9,6 @@
     let file: File | null = $state(null);
     let pollingInterval: NodeJS.Timeout | null = $state(null);
     let senderWebRTC: WebRTCSender | null = $state(null);
-    let debounce: number = $state(0);
 
     let name = $state('');
     let size = $state(0);
@@ -17,7 +16,7 @@
     let checksum = $state('');
     let code = $state('');
 
-    let dropZone: HTMLLabelElement;
+    let dropZone: HTMLLabelElement | null = $state(null);
 
     async function handleFileUpload(file: File) {
         name = file.name;
@@ -98,7 +97,7 @@
             );
             if (fileItems.length > 0) {
                 event.preventDefault();
-                if (!dropZone.contains(event.target)) {
+                if (event.target instanceof Node && !dropZone.contains(event.target)) {
                     event.dataTransfer.dropEffect = "none";
                 }
             }
@@ -121,8 +120,6 @@
         if (senderWebRTC) {
             senderWebRTC = null;
         }
-
-        debounce = 0;
     });
 
 </script>
@@ -212,12 +209,10 @@
 
             }, 2500);
         } else if (result.type === 'error') {
-            errorMessage = result.data?.error || 'An unknown error occurred.';
+            errorMessage = (result as unknown as {data:{error:string}}).data?.error || 'An unknown error occurred.';
         }
 
     }}} class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col gap-4">
-
-    
 
     {#if file}
         <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
