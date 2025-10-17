@@ -1,0 +1,1 @@
+ALTER TABLE "transfer" RENAME COLUMN "downloads_completed" TO "complete";

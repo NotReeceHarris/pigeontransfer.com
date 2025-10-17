@@ -14,8 +14,12 @@ export const transfer = pgTable('transfer', {
 	maxRecipients: integer('max_recipients').notNull().default(1),
 	checksum: varchar('checksum', { length: 64 }).notNull(),
 	
-	/* P2P Connection Status */
-	downloadsCompleted: integer('downloads_completed').notNull().default(0),
+	/* Download Status */
+	complete: boolean('complete').notNull().default(false),
+
+	/* WebRTC */
+	offer: varchar('offer', { length: 5000 }).notNull(),
+	answer: varchar('answer', { length: 5000 }),
 
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	expiresAt: timestamp('expires_at').notNull(),

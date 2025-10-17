@@ -13,9 +13,19 @@ export const load = async ({ params }) => {
 
     try {
         // Find transfer by code
-        const transferRecord = await db.query.transfer.findFirst({
-            where: eq(transfer.code, code)
-        });
+        const transferRecord = await db.select({
+            code: transfer.code,
+            filename: transfer.filename,
+            bytes: transfer.bytes,
+            mimeType: transfer.mimeType,
+            checksum: transfer.checksum,
+            createdAt: transfer.createdAt,
+            expiresAt: transfer.expiresAt,
+            complete: transfer.complete,
+            maxRecipients: transfer.maxRecipients,
+            answer: transfer.answer,
+            offer: transfer.offer
+        }).from(transfer).where(eq(transfer.code, code)).limit(1).then(rows => rows[0]);
 
         if (!transferRecord) {
             return {
@@ -30,10 +40,10 @@ export const load = async ({ params }) => {
             };
         }
 
-        // Check if maximum downloads reached
-        if (transferRecord.downloadsCompleted >= transferRecord.maxRecipients) {
+        // check if already downloaded
+        if (transferRecord.complete) {
             return {
-                error: 'Maximum downloads reached'
+                error: 'Transfer already completed'
             };
         }
 
@@ -46,7 +56,8 @@ export const load = async ({ params }) => {
                 mimeType: transferRecord.mimeType,
                 checksum: transferRecord.checksum,
                 createdAt: transferRecord.createdAt
-            }
+            },
+            offer: transferRecord.offer
         };
     } catch (error) {
         console.error('Database error:', error);

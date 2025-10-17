@@ -1,7 +1,10 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
+    import { WebRTCReceiver } from '$lib/utils/webrtc';
 
     const { data } = $props();
+
+    let receiver: WebRTCReceiver | null = $state(null);
 
     let checkingStatus = $state(false);
     let senderOnline = $state(false);
@@ -20,6 +23,78 @@
     function formatDate(date: Date): string {
         return new Date(date).toLocaleString();
     }
+
+    onMount(async () => {
+
+        if (!data.transfer) {
+            errorMessage = 'No transfer data available.';
+            downloadStatus = 'error';
+            return;
+        }
+
+        if (!data.offer) {
+            errorMessage = 'No WebRTC offer found for this transfer.';
+            downloadStatus = 'error';
+            return;
+        }
+
+        receiver = new WebRTCReceiver({
+            onConnectionStateChange: (state) => {
+                console.log('Receiver connection state:', state);
+            },
+            onProgress: (progress) => {
+                console.log(`Download progress: ${progress.percentage.toFixed(1)}%`);
+            }
+        });
+
+        // Set sender's offer and create answer
+        const answer = await receiver.setOffer({
+            sdp: data.offer,
+            type: 'offer'
+        });
+
+        if (!answer || !answer.sdp || !answer.type || answer.type !== 'answer') {
+            errorMessage = 'Failed to create WebRTC answer.';
+            downloadStatus = 'error';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('answer', answer.sdp);
+
+        const response = await fetch(`/api/${data.transfer.code}/answer`, {
+            method: 'POST',
+            body: formData
+        });
+
+        try {
+            const result = await response.json();
+            if (!response.ok) {
+                errorMessage = result.error || 'Failed to send WebRTC answer to server.';
+                downloadStatus = 'error';
+                return;
+            }
+
+            console.log(result)
+
+            if (result.success !== true) {
+                errorMessage = result.error || 'Server returned an error.';
+                downloadStatus = 'error';
+                return;
+            }
+
+        } catch (error) {
+            errorMessage = 'Error parsing server response.';
+            downloadStatus = 'error';
+            return;
+        }
+
+        // Wait for connection
+        downloadStatus = 'connecting';
+
+
+
+    })
 
 </script>
 
@@ -74,7 +149,7 @@
                 {#if !senderOnline && !checkingStatus}
                     <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
                         <p class="text-sm text-yellow-800">The sender is currently offline.</p>
-                        <p class="text-xs text-yellow-600 mt-1">Ask them to return to the transfer page to resume.</p>
+                        <p class="text-xs text-yellow-600 mt-1">Ask the sender to resend and stay on the page.</p>
                         <button 
                             class="mt-2 px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
 

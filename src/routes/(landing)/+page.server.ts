@@ -1,10 +1,7 @@
 import type { Actions } from './$types';
-import { PUBLIC_MAX_FILE_SIZE } from '$env/static/public';
 import { db } from '$lib/server/db';
 import { transfer } from '$lib/server/db/schema';
 import { generateCode } from '$lib/utils/file';
-
-const MAX_UPLOAD_SIZE = parseInt(PUBLIC_MAX_FILE_SIZE);
 
 export const actions = {
 	create: async ({ request }) => {
@@ -14,13 +11,10 @@ export const actions = {
         const size = formData.get('size') ? Number(formData.get('size')) : null;
         const mimeType = formData.get('type')?.toString();
         const checksum = formData.get('checksum')?.toString();
+        const offer = formData.get('offer')?.toString() || null;
 
-        if (!filename || !size || !mimeType || !checksum) {
+        if (!filename || !size || !mimeType || !checksum || !offer) {
             return { success: false, error: 'Missing required fields' };
-        }
-
-        if (size > MAX_UPLOAD_SIZE) {
-            return { success: false, error: `File size exceeds the maximum limit of ${(MAX_UPLOAD_SIZE / (1024 * 1024 * 1024)).toFixed(1)} GB.` };
         }
 
         try {
@@ -53,7 +47,8 @@ export const actions = {
                 bytes: BigInt(size),
                 mimeType,
                 checksum,
-                expiresAt
+                expiresAt,
+                offer
             }).returning({ id: transfer.id, code: transfer.code });
 
             if (result.length > 0) {
