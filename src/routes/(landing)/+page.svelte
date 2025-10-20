@@ -2,7 +2,7 @@
     import { enhance } from "$app/forms";
     import { page } from "$app/state";
     import { onDestroy, onMount } from "svelte";
-    import { WebRTCSender } from '$lib/utils/webrtc';
+    import { WebRTCSender, rtcConfiguration } from '$lib/utils/webrtc';
     
     let status: ('upload' | 'waiting' | 'connected' | 'transferring' | 'complete' | 'error') = $state('upload');
     let errorMessage = $state('');
@@ -15,6 +15,7 @@
     let type = $state('');
     let checksum = $state('');
     let code = $state('');
+    let connectionMessage = $state('');
 
     let dropZone: HTMLLabelElement | null = $state(null);
 
@@ -46,7 +47,6 @@
     }
 
     async function handleDragOver(event: DragEvent) {
-
         if (!event.dataTransfer) return;
 
         const fileItems = [...event.dataTransfer.items].filter(
@@ -64,8 +64,6 @@
 
     async function handleDrop(event: DragEvent) {
         event.preventDefault();
-
-        console.log('Drop event:', event);
 
         if (!event.dataTransfer) return;
 
@@ -87,9 +85,99 @@
         }
     }
 
-    onMount(() => {
-        window.addEventListener("dragover", (event: DragEvent) => {
+    async function testWebRTCConnection(): Promise<boolean> {
+        return new Promise((resolve) => {
+            const testPC = new RTCPeerConnection(rtcConfiguration);
+            let connected = false;
 
+            testPC.onconnectionstatechange = () => {
+                console.log('Test connection state:', testPC.connectionState);
+                if (testPC.connectionState === 'connected') {
+                    connected = true;
+                    testPC.close();
+                    resolve(true);
+                } else if (testPC.connectionState === 'failed') {
+                    testPC.close();
+                    resolve(false);
+                }
+            };
+
+            // Create data channel to trigger connection
+            const dc = testPC.createDataChannel('test');
+            dc.onopen = () => {
+                connected = true;
+                testPC.close();
+                resolve(true);
+            };
+
+            testPC.createOffer()
+                .then(offer => testPC.setLocalDescription(offer))
+                .catch(() => resolve(false));
+
+            // Timeout after 5 seconds
+            setTimeout(() => {
+                if (!connected) {
+                    testPC.close();
+                    resolve(false);
+                }
+            }, 6000);
+        });
+    }
+
+
+    onMount(async () => {
+
+        const webrtcWorking = await testWebRTCConnection();
+        if (!webrtcWorking) {
+            console.error('❌ WebRTC connection test failed - check configuration');
+            errorMessage = 'WebRTC not working in this browser/environment';
+        } else {
+            console.log('✅ WebRTC connection test passed');
+        }
+
+        senderWebRTC = new WebRTCSender({
+            onConnectionStateChange: (state) => {
+                console.log('Sender connection state:', state);
+                
+                if (state === 'connected') {
+                    status = 'connected';
+                    connectionMessage = '✅ Connected to recipient!';
+                    console.log('🎉 Sender fully connected to receiver!');
+                } else if (state === 'connecting') {
+                    connectionMessage = '🔄 Connecting to recipient...';
+                } else if (state === 'failed') {
+                    status = 'error';
+                    connectionMessage = '❌ Connection failed';
+                }
+            },
+            onDataChannelOpen: () => {
+                console.log('✅ Sender data channel opened');
+                connectionMessage = '📡 Data channel ready - establishing connection...';
+            },
+            onProgress: (progress) => {
+                if (progress.totalChunks !== progress.chunksTransferred) {
+                    status = 'transferring';
+                }
+            },
+            onFileComplete: () => {
+                console.log('✅ File transfer complete!');
+                status = 'complete';
+                connectionMessage = '✅ File transfer completed successfully!';
+            },
+            onError: (error) => {
+                console.error('WebRTC error:', error);
+                errorMessage = error;
+                status = 'error';
+            }
+        });
+
+        // Pre-create the offer to reduce wait time later
+        await senderWebRTC.createOffer().catch((err) => {
+            console.error('Error creating WebRTC offer:', err);
+            return null;
+        });
+
+        window.addEventListener("dragover", (event: DragEvent) => {
             if (!event.dataTransfer || !event.target || !dropZone) return;
 
             const fileItems = [...event.dataTransfer.items].filter(
@@ -104,7 +192,6 @@
         });
 
         window.addEventListener("drop", (event) => {
-
             if (!event.dataTransfer) return;
 
             if ([...event.dataTransfer.items].some((item) => item.kind === "file")) {
@@ -113,11 +200,48 @@
         });
     });
 
+    async function startFileTransfer() {
+        if (!senderWebRTC || !file) {
+            errorMessage = 'WebRTC sender or file not initialized.';
+            return;
+        }
+
+        senderWebRTC.setFile(file);
+
+        // Wait for data channel to be ready
+        let attempts = 0;
+        const maxAttempts = 30; // 3 seconds total
+        
+        while (attempts < maxAttempts) {
+            if (senderWebRTC.getConnectionState() === 'connected') {
+                try {
+                    await senderWebRTC.startTransfer();
+                    console.log('📤 File transfer started!');
+                    return;
+                } catch (error) {
+                    console.error('Error starting transfer:', error);
+                    errorMessage = `Failed to start transfer: ${error}`;
+                    status = 'error';
+                    return;
+                }
+            }
+            
+            // Wait 100ms and try again
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+        
+        // If we get here, connection never established
+        errorMessage = 'Connection failed - data channel never became ready';
+        status = 'error';
+    }
+
     onDestroy(() => {
         if (pollingInterval) {
             clearInterval(pollingInterval);
         }
         if (senderWebRTC) {
+            senderWebRTC.destroy();
             senderWebRTC = null;
         }
     });
@@ -131,24 +255,22 @@
         return;
     }
 
+    if (!senderWebRTC) {
+        errorMessage = 'WebRTC sender instance is not initialized.';
+        return;
+    }
+
     formData.delete('file');
     formData.append('name', name);
     formData.append('size', size.toString());
     formData.append('type', type);
     formData.append('checksum', checksum);
 
-    senderWebRTC = new WebRTCSender({
-        onConnectionStateChange: (state) => {
-            console.log('Sender connection state:', state);
-        },
-        onProgress: (progress) => {
-            console.log(`Transfer progress: ${progress.percentage.toFixed(1)}%`);
-        }
+    const offer = await senderWebRTC.createOffer().catch((err) => {
+        console.error('Error creating WebRTC offer:', err);
+        return null;
     });
 
-    senderWebRTC.setFile(file);
-    const offer = await senderWebRTC.createOffer();
-    
     if (!offer || !offer.sdp || !offer.type || offer.type !== 'offer') {
         errorMessage = 'Failed to create WebRTC offer.';
         return;
@@ -163,33 +285,21 @@
             code = result.data.code;
             status = 'waiting';
             errorMessage = '';
+            connectionMessage = '⏳ Waiting for recipient to connect...';
+            
             pollingInterval = setInterval(async () => {
+                if (!code || !senderWebRTC) return;
 
-                if (!code) {
-                    console.error('No code available for polling.');
-                    return;
-                }
-
-                if (!senderWebRTC) {
-                    console.error('WebRTC sender instance is not initialized.');
-                    return;
-                }
-                
                 const response = await fetch(`/api/${code}/answer`).catch((err) => {
                     console.error('Error fetching answer:', err);
                     return null;
                 });
 
-                if (!response || !response.ok) {
-                    console.error('Failed to fetch answer from server.');
-                    return;
-                }
+                if (!response || !response.ok) return;
 
                 const data = await response.json();
                 if (data.answer && !data.error) {
-
                     console.log('Received answer from recipient, setting answer...');
-
                     clearInterval(pollingInterval!);
                     pollingInterval = null;
 
@@ -198,15 +308,46 @@
                         sdp: data.answer
                     });
 
+                    // Don't start transfer immediately - wait for connection
+                    connectionMessage = '🔄 Establishing connection...';
+                    
+                    // Monitor connection state and start transfer when ready
+                    const connectionCheck = setInterval(() => {
+                        if (!senderWebRTC) return;
+
+                        const state = senderWebRTC.getConnectionState();
+                        console.log('Current connection state:', state);
+                        
+                        if (state === 'connected') {
+                            clearInterval(connectionCheck);
+                            console.log('✅ Connection established, starting transfer...');
+                            connectionMessage = '✅ Connected! Starting transfer...';
+                            startFileTransfer();
+                        } else if (state === 'failed' || state === 'disconnected') {
+                            clearInterval(connectionCheck);
+                            status = 'error';
+                            errorMessage = `Connection failed: ${state}`;
+                        }
+                    }, 500);
+
+                    // Timeout after 10 seconds
+                    setTimeout(() => {
+
+                        if (!senderWebRTC) return;
+
+                        clearInterval(connectionCheck);
+                        if (senderWebRTC.getConnectionState() !== 'connected') {
+                            status = 'error';
+                            errorMessage = 'Connection timeout - failed to establish connection';
+                        }
+                    }, 10000);
+
                 } else if (data.error) {
                     clearInterval(pollingInterval!);
                     pollingInterval = null;
                     status = 'error';
                     errorMessage = data.error;
-                } else if (data.answer == null && !data.error) {
-                    console.log('Answer not yet available, continuing to poll...');
                 }
-
             }, 2500);
         } else if (result.type === 'error') {
             errorMessage = (result as unknown as {data:{error:string}}).data?.error || 'An unknown error occurred.';
@@ -250,23 +391,24 @@
             </p>
         </div>
 
-        <div class="flex flex-col">
+        <div class="flex flex-col gap-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             {#if status === 'waiting'}
-                <p class="text-sm text-gray-700">Waiting for recipient to connect...</p>
+                <p class="text-sm text-blue-700">{connectionMessage}</p>
             {:else if status === 'connected'}
-                <p class="text-sm text-gray-700">Transferring file...</p>
+                <p class="text-sm text-green-700">{connectionMessage}</p>
             {:else if status === 'transferring'}
-                <p class="text-sm text-gray-700">Transferring file...</p>
+                <p class="text-sm text-blue-700">📤 Transferring file...</p>
             {:else if status === 'complete'}
-                <p class="text-sm text-green-700">File transfer complete!</p>
+                <p class="text-sm text-green-700">{connectionMessage}</p>
             {:else if status === 'error'}
                 <p class="text-sm text-red-700">
-                    {
-                        errorMessage || 'An error occurred during the file transfer.'
-                    }
+                    {errorMessage || 'An error occurred during the file transfer.'}
+                </p>
+                <p class="text-xs text-red-600">
+                    Tip: This often happens when both users are behind restrictive firewalls. 
+                    Try using a different network or browser.
                 </p>
             {/if}
-
         </div>
     {/if}
 

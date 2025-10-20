@@ -9,8 +9,9 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<div class="">
-	<div class="max-w-2xl mx-auto p-6">
+<div>
+	<div class="max-w-2xl mx-auto p-6 flex flex-col gap-6">
+		<h1 class="text-6xl">ESS APP, Proof Of delivery portal</h1>
 		{@render children?.()}
 	</div>
 </div>

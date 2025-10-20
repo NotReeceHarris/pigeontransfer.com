@@ -6,12 +6,11 @@
 
     let receiver: WebRTCReceiver | null = $state(null);
 
-    let checkingStatus = $state(false);
-    let senderOnline = $state(false);
     let downloadStatus = $state<'waiting' | 'connecting' | 'downloading' | 'verifying' | 'complete' | 'error'>('waiting');
     let downloadProgress = $state({ percentage: 0, bytesTransferred: 0, totalBytes: data.transfer ? Number(data.transfer.bytes) : 0 });
     let isLargeFile = $state(false);
     let errorMessage = $state('');
+    let connectionMessage = $state('');
 
     function formatFileSize(bytes: number): string {
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -25,7 +24,6 @@
     }
 
     onMount(async () => {
-
         if (!data.transfer) {
             errorMessage = 'No transfer data available.';
             downloadStatus = 'error';
@@ -41,41 +39,72 @@
         receiver = new WebRTCReceiver({
             onConnectionStateChange: (state) => {
                 console.log('Receiver connection state:', state);
+                
+                if (state === 'connected') {
+                    downloadStatus = 'connecting';
+                    connectionMessage = '✅ Connected to sender - waiting for file...';
+                    console.log('🎉 Receiver connected to sender!');
+                } else if (state === 'connecting') {
+                    connectionMessage = '🔄 Connecting to sender...';
+                } else if (state === 'failed') {
+                    downloadStatus = 'error';
+                    connectionMessage = '❌ Connection failed';
+                    errorMessage = 'Failed to connect to sender';
+                }
+            },
+            onDataChannelOpen: () => {
+                console.log('✅ Receiver data channel opened');
+                connectionMessage = '📡 Data channel ready - waiting for file transfer...';
             },
             onProgress: (progress) => {
-                console.log(`Download progress: ${progress.percentage.toFixed(1)}%`);
+                
+                if (progress.totalChunks !== progress.chunksTransferred) {
+                    downloadStatus = 'downloading';
+                }
+            },
+            onFileComplete: () => {
+                console.log('✅ File download complete!');
+                downloadStatus = 'complete';
+                connectionMessage = '✅ File downloaded successfully!';
+            },
+            onError: (error) => {
+                console.error('WebRTC error:', error);
+                errorMessage = error;
+                downloadStatus = 'error';
             }
         });
 
-        // Set sender's offer and create answer
-        const answer = await receiver.setOffer({
-            sdp: data.offer,
-            type: 'offer'
-        });
-
-        if (!answer || !answer.sdp || !answer.type || answer.type !== 'answer') {
-            errorMessage = 'Failed to create WebRTC answer.';
-            downloadStatus = 'error';
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append('answer', answer.sdp);
-
-        const response = await fetch(`/api/${data.transfer.code}/answer`, {
-            method: 'POST',
-            body: formData
-        });
-
         try {
+            // Set sender's offer and create answer
+            const answer = await receiver.setOffer({
+                sdp: data.offer,
+                type: 'offer'
+            });
+
+            if (!answer || !answer.sdp || !answer.type || answer.type !== 'answer') {
+                errorMessage = 'Failed to create WebRTC answer.';
+                downloadStatus = 'error';
+                return;
+            }
+
+            console.log('✅ Created WebRTC answer, sending to server...');
+
+            const formData = new FormData();
+            formData.append('answer', answer.sdp);
+
+            const response = await fetch(`/api/${data.transfer.code}/answer`, {
+                method: 'POST',
+                body: formData
+            });
+
             const result = await response.json();
+            console.log('Server response:', result);
+
             if (!response.ok) {
                 errorMessage = result.error || 'Failed to send WebRTC answer to server.';
                 downloadStatus = 'error';
                 return;
             }
-
-            console.log(result)
 
             if (result.success !== true) {
                 errorMessage = result.error || 'Server returned an error.';
@@ -83,18 +112,53 @@
                 return;
             }
 
+            console.log('✅ Answer sent to server successfully');
+            downloadStatus = 'connecting';
+            connectionMessage = '🔄 Establishing connection with sender...';
+
+            // Monitor connection state
+            const connectionCheck = setInterval(() => {
+                if (!receiver) {
+                    clearInterval(connectionCheck);
+                    return;
+                }
+                
+                const state = receiver.getConnectionState();
+                console.log('Current receiver connection state:', state);
+                
+                if (state === 'connected') {
+                    clearInterval(connectionCheck);
+                    console.log('✅ Connection established, waiting for file...');
+                    connectionMessage = '✅ Connected! Waiting for file transfer to start...';
+                } else if (state === 'failed' || state === 'disconnected') {
+                    clearInterval(connectionCheck);
+                    downloadStatus = 'error';
+                    errorMessage = `Connection failed: ${state}`;
+                }
+            }, 500);
+
+            // Timeout after 15 seconds
+            setTimeout(() => {
+                clearInterval(connectionCheck);
+                if (receiver && receiver.getConnectionState() !== 'connected') {
+                    downloadStatus = 'error';
+                    errorMessage = 'Connection timeout - failed to establish connection with sender';
+                }
+            }, 15000);
+
         } catch (error) {
-            errorMessage = 'Error parsing server response.';
+            console.error('Error during WebRTC setup:', error);
+            errorMessage = `WebRTC setup failed: ${error}`;
             downloadStatus = 'error';
-            return;
         }
+    });
 
-        // Wait for connection
-        downloadStatus = 'connecting';
-
-
-
-    })
+    onDestroy(() => {
+        if (receiver) {
+            receiver.destroy();
+            receiver = null;
+        }
+    });
 
 </script>
 
@@ -129,41 +193,39 @@
                     <span class="text-gray-600">{formatDate(data.transfer.createdAt)}</span>
                 </div>
                 <div>
-                    <span class="font-medium text-gray-700">Sender:</span>
+                    <span class="font-medium text-gray-700">Status:</span>
                     <span class="text-gray-600">
-                        {#if checkingStatus}
-                            <span class="text-yellow-600">Checking...</span>
-                        {:else if senderOnline}
-                            <span class="text-green-600">Online</span>
-                        {:else}
-                            <span class="text-red-600">Offline</span>
+                        {#if downloadStatus === 'waiting'}
+                            <span class="text-yellow-600">Waiting</span>
+                        {:else if downloadStatus === 'connecting'}
+                            <span class="text-blue-600">Connecting</span>
+                        {:else if downloadStatus === 'downloading'}
+                            <span class="text-green-600">Downloading</span>
+                        {:else if downloadStatus === 'complete'}
+                            <span class="text-green-600">Complete</span>
+                        {:else if downloadStatus === 'error'}
+                            <span class="text-red-600">Error</span>
                         {/if}
                     </span>
                 </div>
             </div>
         </div>
 
+        <!-- Connection Status -->
+        {#if connectionMessage}
+            <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="text-sm text-blue-700 text-center">{connectionMessage}</p>
+            </div>
+        {/if}
+
         <!-- Download Status -->
         {#if downloadStatus === 'waiting'}
             <div class="text-center">
-                {#if !senderOnline && !checkingStatus}
-                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                        <p class="text-sm text-yellow-800">The sender is currently offline.</p>
-                        <p class="text-xs text-yellow-600 mt-1">Ask the sender to resend and stay on the page.</p>
-                        <button 
-                            class="mt-2 px-3 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
-
-                        >
-                            Check Again
-                        </button>
-                    </div>
-                {/if}
-                
                 <button 
                     class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!senderOnline || checkingStatus}
+                    disabled
                 >
-                    {checkingStatus ? 'Checking Sender...' : 'Download File'}
+                    Preparing Download...
                 </button>
             </div>
         {:else if downloadStatus === 'connecting'}
@@ -211,6 +273,7 @@
                 <p class="text-red-700 text-sm mb-4">{errorMessage}</p>
                 <button 
                     class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    on:click={() => window.location.reload()}
                 >
                     Try Again
                 </button>
@@ -224,4 +287,3 @@
         {/if}
     </div>
 {/if}
-
