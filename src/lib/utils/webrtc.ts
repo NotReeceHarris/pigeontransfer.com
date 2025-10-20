@@ -417,9 +417,6 @@ export class WebRTCReceiver extends WebRTCBase {
     }
 
     private calculateBytesTransferred(): number {
-        /* return this.receivedChunks.reduce((total, chunk) => {
-            return total + (chunk ? chunk.byteLength : 0);
-        }, 0); */
         let total = 0;
         for (const key in this.receivedChunks) {
             total += this.receivedChunks[key].byteLength;

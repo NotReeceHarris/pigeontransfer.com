@@ -1,13 +1,18 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { WebRTCReceiver } from '$lib/utils/webrtc';
+    import { goto } from '$app/navigation';
 
     const { data } = $props();
 
     let receiver: WebRTCReceiver | null = $state(null);
 
     let downloadStatus = $state<'waiting' | 'connecting' | 'downloading' | 'verifying' | 'complete' | 'error'>('waiting');
-    let downloadProgress = $state({ percentage: 0, bytesTransferred: 0, totalBytes: data.transfer ? Number(data.transfer.bytes) : 0 });
+    let downloadProgress = $state({ 
+        percentage: 0, 
+        bytesTransferred: 0, 
+        totalBytes: data.transfer ? Number(data.transfer.bytes) : 0 
+    });
     let isLargeFile = $state(false);
     let errorMessage = $state('');
     let connectionMessage = $state('');
@@ -57,6 +62,12 @@
                 connectionMessage = '📡 Data channel ready - waiting for file transfer...';
             },
             onProgress: (progress) => {
+
+                downloadProgress = {
+                    percentage: (progress.bytesTransferred / data.transfer.bytes) * 100,
+                    bytesTransferred: progress.bytesTransferred,
+                    totalBytes: data.transfer.bytes
+                };
                 
                 if (progress.totalChunks !== progress.chunksTransferred) {
                     downloadStatus = 'downloading';
@@ -273,7 +284,7 @@
                 <p class="text-red-700 text-sm mb-4">{errorMessage}</p>
                 <button 
                     class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                    on:click={() => window.location.reload()}
+                    onclick={() => goto(`/${data.transfer.code}`)}
                 >
                     Try Again
                 </button>
