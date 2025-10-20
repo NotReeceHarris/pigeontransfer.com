@@ -17,6 +17,9 @@ export const rtcConfiguration: RTCConfiguration = {
     // Remove iceTransportPolicy: 'relay' for now
 };
 
+//export const chunkSize = 16384; // 16KB
+export const chunkSize = 64 * 1024; // 64KB
+
 // Types
 interface FileMetadata {
     name: string;
@@ -133,7 +136,6 @@ abstract class WebRTCBase {
 export class WebRTCSender extends WebRTCBase {
     private file: File | null = null;
     private fileReader: FileReader = new FileReader();
-    private chunkSize: number = 16384; // 16KB chunks
     private connectionConfirmed: boolean = false
 
     constructor(events: WebRTCEvents = {}) {
@@ -265,7 +267,7 @@ export class WebRTCSender extends WebRTCBase {
 
         const fileBytes = new Uint8Array(this.fileReader.result as ArrayBuffer);
 
-        const start = sequence * this.chunkSize;
+        const start = sequence * chunkSize;
         if (start >= fileBytes.length) {
             // File transfer complete
             this.dataChannel.send(JSON.stringify({
@@ -275,10 +277,9 @@ export class WebRTCSender extends WebRTCBase {
             return;
         }
 
-        const end = Math.min(start + this.chunkSize, fileBytes.length);
+        const end = Math.min(start + chunkSize, fileBytes.length);
         const chunk = fileBytes.slice(start, end);
         const hexChunk = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join('');
-        console.log('sending chunk', chunk, hexChunk)
 
         this.dataChannel.send(JSON.stringify({
             type: 'file_chunk',
@@ -291,7 +292,7 @@ export class WebRTCSender extends WebRTCBase {
         const progress: TransferProgress = {
             bytesTransferred: end,
             chunksTransferred: sequence + 1,
-            totalChunks: Math.ceil(fileBytes.length / this.chunkSize)
+            totalChunks: Math.ceil(fileBytes.length / chunkSize)
         };
 
         this.events.onProgress?.(progress);
@@ -370,7 +371,7 @@ export class WebRTCReceiver extends WebRTCBase {
         switch (message.type) {
             case 'metadata':
                 this.fileMetadata = message.metadata;
-                this.expectedChunks = Math.ceil(message.metadata.size / 16384);
+                this.expectedChunks = Math.ceil(message.metadata.size / chunkSize);
                 console.log('Receiving file:', this.fileMetadata);
                 // Signal ready for first chunk
                 this.sendAcknowledgment(0);
@@ -388,8 +389,6 @@ export class WebRTCReceiver extends WebRTCBase {
 
     private async handleFileChunk(message: any): Promise<void> {
         if (!this.fileMetadata) return;
-
-        console.log(`Received chunk: `, message);
 
         const hexEncodedData: string = message.data;
         const decodedData = new Uint8Array(hexEncodedData.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
@@ -444,8 +443,6 @@ export class WebRTCReceiver extends WebRTCBase {
         // Combine all chunks into a single file (sequentially order)
         const receivedSize = Object.values(this.receivedChunks).reduce((acc, chunk) => acc + chunk.byteLength, 0);
         const combinedBuffer = new Uint8Array(receivedSize);
-
-        console.log('calculated received size:', receivedSize);
         
         let offset = 0;
         for (let i = 0; i < this.expectedChunks; i++) {
@@ -455,11 +452,6 @@ export class WebRTCReceiver extends WebRTCBase {
                 offset += chunk.byteLength;
             }
         }
-
-        console.log('Combined file size:', combinedBuffer.byteLength);
-        console.log('Expected file size:', this.fileMetadata.size);
-        console.log('data:', combinedBuffer);
-
 
         // Create download link
         const blob = new Blob([combinedBuffer], { type: this.fileMetadata.type });

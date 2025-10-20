@@ -5,6 +5,11 @@
     import { WebRTCSender, rtcConfiguration } from '$lib/utils/webrtc';
     
     let status: ('upload' | 'waiting' | 'connected' | 'transferring' | 'complete' | 'error') = $state('upload');
+    let transferProgress = $state({ 
+        percentage: 0, 
+        bytesTransferred: 0, 
+        totalBytes: 0
+    });
     let errorMessage = $state('');
     let file: File | null = $state(null);
     let pollingInterval: NodeJS.Timeout | null = $state(null);
@@ -155,6 +160,10 @@
                 connectionMessage = '📡 Data channel ready - establishing connection...';
             },
             onProgress: (progress) => {
+                transferProgress.bytesTransferred = progress.bytesTransferred;
+                transferProgress.totalBytes = size;
+                transferProgress.percentage = (progress.bytesTransferred / size) * 100;
+
                 if (progress.totalChunks !== progress.chunksTransferred) {
                     status = 'transferring';
                 }
@@ -397,7 +406,7 @@
             {:else if status === 'connected'}
                 <p class="text-sm text-green-700">{connectionMessage}</p>
             {:else if status === 'transferring'}
-                <p class="text-sm text-blue-700">📤 Transferring file...</p>
+                <p class="text-sm text-blue-700">📤 Transferring file... ({transferProgress.percentage.toFixed(2)} %)</p>
             {:else if status === 'complete'}
                 <p class="text-sm text-green-700">{connectionMessage}</p>
             {:else if status === 'error'}
