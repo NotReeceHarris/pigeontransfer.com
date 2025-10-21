@@ -17,7 +17,6 @@ export async function GET({ params }) {
 			answer: transfer.answer,
 			expiresAt: transfer.expiresAt,
 			complete: transfer.complete,
-			maxRecipients: transfer.maxRecipients
 		}).from(transfer).where(eq(transfer.code, code)).limit(1).then(rows => rows[0]);
 
 		if (!transferRecord) {
@@ -67,7 +66,6 @@ export async function POST({ params, request }) {
 			answer: transfer.answer,
 			expiresAt: transfer.expiresAt,
 			complete: transfer.complete,
-			maxRecipients: transfer.maxRecipients
 		}).from(transfer).where(eq(transfer.code, code)).limit(1).then(rows => rows[0]);
 
 		if (!transferRecord) {

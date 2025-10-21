@@ -244,8 +244,10 @@
     formData.append('offer', offer.sdp);
 
     return ({ result }) => {
+
+        console.log(result)
         
-        if (result.type === 'success' && result.data && result.data.code && !result.data.error && typeof result.data.code === 'string') {
+        if (result.type === 'success' && result.data && result.data.success && result.data.code && !result.data.error && typeof result.data.code === 'string') {
             
             code = result.data.code;
             status = 'waiting';
@@ -314,7 +316,9 @@
                     errorMessage = data.error;
                 }
             }, 2500);
-        } else if (result.type === 'error') {
+
+        } else if (result.type === 'error' || result.data.error) {
+            console.log('Form submission error:', result);
             errorMessage = (result as unknown as {data:{error:string}}).data?.error || 'An unknown error occurred.';
         }
 
@@ -378,7 +382,9 @@
     {/if}
 
     {#if errorMessage}
-        <p class="text-red-600 mt-4">{errorMessage}</p>
+        <div class="flex flex-col gap-2 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p class="text-red-700">{errorMessage}</p>
+        </div>
     {/if}
 
 </form>

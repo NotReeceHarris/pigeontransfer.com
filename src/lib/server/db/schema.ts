@@ -11,8 +11,8 @@ export const transfer = pgTable('transfer', {
 	
 	/* Security */
 	password: varchar('password', { length: 97 }),
-	maxRecipients: integer('max_recipients').notNull().default(1),
 	checksum: varchar('checksum', { length: 64 }).notNull(),
+	virusChecked: boolean('virus_checked').notNull().default(false),
 	
 	/* Download Status */
 	complete: boolean('complete').notNull().default(false),

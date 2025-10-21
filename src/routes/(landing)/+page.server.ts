@@ -3,6 +3,9 @@ import { db } from '$lib/server/db';
 import { transfer } from '$lib/server/db/schema';
 import { generateCode } from '$lib/utils/file';
 
+const VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3/files/"
+const VIRUSTOTAL_API_KEY = "3e99fede4d76e3a1f3f57150ff2c6b0c1c3c3dacde4f30913809bef4a92d529e";
+
 export const actions = {
 	create: async ({ request }) => {
 		const formData = await request.formData();
@@ -15,6 +18,53 @@ export const actions = {
 
         if (!filename || !size || !mimeType || !checksum || !offer) {
             return { success: false, error: 'Missing required fields' };
+        }
+
+        const response = await fetch(VIRUSTOTAL_URL + checksum, {
+            method: 'GET',
+            headers: {
+                'x-apikey': VIRUSTOTAL_API_KEY
+            }
+        }).catch((error) => {
+            console.error('Error fetching VirusTotal:', error);
+            return null;
+        })
+
+
+        if (!response || !response.ok && response.status !== 404) {
+            return { success: false, error: 'Error verifying file with VirusTotal' };
+        }
+
+        let virusChecked = false;
+
+        if (response.status !== 404) {
+            const json = await response.json().catch((error) => {
+                console.error('Error parsing VirusTotal response:', error);
+                return null;
+            })
+
+            if (!json) {
+                return { success: false, error: 'Error parsing VirusTotal response' };
+            }
+
+            const reputation = json.data.attributes.reputation;
+            const maliciousVotes = json.data.attributes.last_analysis_stats.malicious;
+            const sandboxes = json.data.attributes.total_votes.malicious;
+            const verdicts = json.data.attributes.sandbox_verdicts;
+
+            if (reputation < 0 || maliciousVotes > 0 || sandboxes > 0) {
+                return { success: false, error: 'File is flagged as malicious' };
+            }
+
+            if (verdicts) {
+                for (const key in verdicts) {
+                    if (verdicts[key].verdict === 'malicious') {
+                        return { success: false, error: `File is flagged as malicious by ${verdicts[key].sandbox_name}` };
+                    }
+                }
+            }
+
+            virusChecked = true;
         }
 
         try {
@@ -48,7 +98,8 @@ export const actions = {
                 mimeType,
                 checksum,
                 expiresAt,
-                offer
+                offer,
+                virusChecked
             }).returning({ id: transfer.id, code: transfer.code });
 
             if (result.length > 0) {

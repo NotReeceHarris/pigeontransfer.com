@@ -22,9 +22,9 @@ export const load = async ({ params }) => {
             createdAt: transfer.createdAt,
             expiresAt: transfer.expiresAt,
             complete: transfer.complete,
-            maxRecipients: transfer.maxRecipients,
             answer: transfer.answer,
-            offer: transfer.offer
+            offer: transfer.offer,
+            virusChecked: transfer.virusChecked
         }).from(transfer).where(eq(transfer.code, code)).limit(1).then(rows => rows[0]);
 
         if (!transferRecord) {
@@ -55,7 +55,8 @@ export const load = async ({ params }) => {
                 bytes: Number(transferRecord.bytes),
                 mimeType: transferRecord.mimeType,
                 checksum: transferRecord.checksum,
-                createdAt: transferRecord.createdAt
+                createdAt: transferRecord.createdAt,
+                virusChecked: transferRecord.virusChecked
             },
             offer: transferRecord.offer
         };
