@@ -294,7 +294,7 @@
                         <span class="text-sm text-gray-500">{downloadProgress.percentage.toFixed(1)}%</span>
                     </div>
                     <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
-                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: {downloadProgress.percentage}%"></div>
+                        <div class="bg-blue-600 h-2 rounded-full transition-all" style="width: {downloadProgress.percentage}%"></div>
                     </div>
                     <p class="text-xs text-gray-500 text-center">
                         {formatFileSize(downloadProgress.bytesTransferred)} of {formatFileSize(downloadProgress.totalBytes)}

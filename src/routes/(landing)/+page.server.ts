@@ -43,28 +43,26 @@ export const actions = {
                 return null;
             })
 
-            if (!json) {
-                return { success: false, error: 'Error parsing VirusTotal response' };
-            }
+            if (json) {
+                const reputation = json.data.attributes.reputation;
+                const maliciousVotes = json.data.attributes.last_analysis_stats.malicious;
+                const sandboxes = json.data.attributes.total_votes.malicious;
+                const verdicts = json.data.attributes.sandbox_verdicts;
 
-            const reputation = json.data.attributes.reputation;
-            const maliciousVotes = json.data.attributes.last_analysis_stats.malicious;
-            const sandboxes = json.data.attributes.total_votes.malicious;
-            const verdicts = json.data.attributes.sandbox_verdicts;
+                if (reputation < 0 || maliciousVotes > 0 || sandboxes > 0) {
+                    return { success: false, error: '🚫 File is flagged as malicious' };
+                }
 
-            if (reputation < 0 || maliciousVotes > 0 || sandboxes > 0) {
-                return { success: false, error: 'File is flagged as malicious' };
-            }
-
-            if (verdicts) {
-                for (const key in verdicts) {
-                    if (verdicts[key].verdict === 'malicious') {
-                        return { success: false, error: `File is flagged as malicious by ${verdicts[key].sandbox_name}` };
+                if (verdicts) {
+                    for (const key in verdicts) {
+                        if (verdicts[key].verdict === 'malicious') {
+                            return { success: false, error: `🚫 File is flagged as malicious by ${verdicts[key].sandbox_name}` };
+                        }
                     }
                 }
-            }
 
-            virusChecked = true;
+                virusChecked = true;
+            }
         }
 
         try {

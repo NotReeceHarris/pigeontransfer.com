@@ -48,7 +48,6 @@ abstract class WebRTCBase {
     protected pc: RTCPeerConnection;
     protected dataChannel: RTCDataChannel | null = null;
     protected events: WebRTCEvents;
-
     protected metadata: FileMetadata | null = null;
 
     constructor(events: WebRTCEvents = {}) {
@@ -471,13 +470,13 @@ export class WebRTCReceiver extends WebRTCBase {
         this.downloadComplete = true;
 
         if (hashHex !== this.fileMetadata.checksum) {
-            console.error('❌ Checksum mismatch! File may be corrupted.');
-            this.events.onError?.('Checksum mismatch! File may be corrupted.');
+            console.error('Checksum mismatch! File may be corrupted.');
+            this.events.onError?.('❌ Checksum mismatch! File may be corrupted.');
+            console.log('File checksum:', hashHex);
+            console.log('Expected checksum:', this.fileMetadata.checksum);
             return;
         } else {
             console.log('Checksum verified. File integrity intact.');
-            console.log('File checksum:', hashHex);
-            console.log('Expected checksum:', this.fileMetadata.checksum);
         }
 
         const url = URL.createObjectURL(blob);
