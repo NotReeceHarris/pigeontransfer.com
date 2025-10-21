@@ -21,7 +21,6 @@
   },
   "devDependencies": {
     "@chromatic-com/storybook": "^4.1.1",
-    "@cloudflare/workerd-linux-64": "^1.20251008.0",
     "@playwright/test": "^1.55.1",
     "@storybook/addon-a11y": "^9.1.12",
     "@storybook/addon-docs": "^9.1.12",
