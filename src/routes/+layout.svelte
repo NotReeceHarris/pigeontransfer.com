@@ -2,8 +2,20 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
     import { page } from '$app/state';
-	
+	import { onMount } from 'svelte';
+
 	let { children } = $props();
+	let isSupported: boolean = $state(true)
+
+	onMount(() => {
+		const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+
+		if (!isChrome) {
+			isSupported = false;
+		}
+	})
+
+
 </script>
 
 <svelte:head>
@@ -19,6 +31,13 @@
 			pigeontransfer.com
 			{/if}
 		</h1>
-		{@render children?.()}
+		{#if isSupported}
+			{@render children?.()}
+		{:else}
+			<div class="flex flex-col gap-2 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+				<strong class="font-bold">Unsupported Browser!</strong>
+				<span class="block sm:inline">We are working on supporting your browser, however for now if you want to use this service please use google chrome</span>
+			</div>
+		{/if}
 	</div>
 </div>

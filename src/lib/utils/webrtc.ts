@@ -49,10 +49,21 @@ abstract class WebRTCBase {
     protected dataChannel: RTCDataChannel | null = null;
     protected events: WebRTCEvents;
 
+    protected metadata: FileMetadata | null = null;
+
     constructor(events: WebRTCEvents = {}) {
         this.pc = new RTCPeerConnection(rtcConfiguration);
         this.events = events;
         this.setupConnectionListeners();
+    }
+
+    setMetaData(name: string, type: string, size: number, hash: string): void {
+        this.metadata = {
+            name: name,
+            type: type,
+            size: size,
+            checksum: hash
+        };
     }
 
     protected setupConnectionListeners(): void {
@@ -88,10 +99,10 @@ abstract class WebRTCBase {
                 
                 // Check if we got relay candidates
                 if (event.candidate.type === 'relay') {
-                    console.log('✅ Successfully gathered relay candidate');
+                    console.log('Successfully gathered relay candidate');
                 }
             } else {
-                console.log('✅ ICE candidate gathering complete');
+                console.log('ICE candidate gathering complete');
                 // Check what types of candidates we collected
                 this.logCandidateSummary();
             }
@@ -161,7 +172,7 @@ export class WebRTCSender extends WebRTCBase {
                 const message = JSON.parse(event.data);
                 
                 if (message.type === 'hello') {
-                    console.log('✅ Receiver says:', message.text);
+                    console.log('Receiver says:', message.text);
                     this.connectionConfirmed = true;
                     // Send response back
                     this.sendHelloWorld();
@@ -174,7 +185,7 @@ export class WebRTCSender extends WebRTCBase {
         };
 
         this.dataChannel.onopen = () => {
-            console.log('✅ Data channel opened - sender side');
+            console.log('Data channel opened - sender side');
             this.events.onDataChannelOpen?.();
             
             // Wait a moment then send hello message
@@ -189,7 +200,7 @@ export class WebRTCSender extends WebRTCBase {
                 text: 'Hello from Sender! Connection established successfully.',
                 timestamp: new Date().toISOString()
             }));
-            console.log('📤 Sent hello message to receiver');
+            console.log('Sent hello message to receiver');
         }
     }
 
@@ -308,6 +319,7 @@ export class WebRTCReceiver extends WebRTCBase {
     private expectedChunks: number = 0;
     private connectionConfirmed: boolean = false;
     private transferComplete: boolean = false;
+    private downloadComplete: boolean = false;
 
     constructor(events: WebRTCEvents = {}) {
         super(events);
@@ -332,7 +344,7 @@ export class WebRTCReceiver extends WebRTCBase {
                     
                     // Handle hello message
                     if (message.type === 'hello') {
-                        console.log('✅ Sender says:', message.text);
+                        console.log('Sender says:', message.text);
                         this.connectionConfirmed = true;
                         // Send response back
                         this.sendHelloWorld();
@@ -348,7 +360,7 @@ export class WebRTCReceiver extends WebRTCBase {
         };
 
         this.dataChannel.onopen = () => {
-            console.log('✅ Data channel opened - receiver side');
+            console.log('Data channel opened - receiver side');
             this.events.onDataChannelOpen?.();
             
             // Wait a moment then send hello message
@@ -363,7 +375,7 @@ export class WebRTCReceiver extends WebRTCBase {
                 text: 'Hello from Receiver! Ready to receive file.',
                 timestamp: new Date().toISOString()
             }));
-            console.log('📤 Sent hello message to sender');
+            console.log('Sent hello message to sender');
         }
     }
 
@@ -372,8 +384,6 @@ export class WebRTCReceiver extends WebRTCBase {
             case 'metadata':
                 this.fileMetadata = message.metadata;
                 this.expectedChunks = Math.ceil(message.metadata.size / chunkSize);
-                console.log('Receiving file:', this.fileMetadata);
-                // Signal ready for first chunk
                 this.sendAcknowledgment(0);
                 break;
 
@@ -432,13 +442,8 @@ export class WebRTCReceiver extends WebRTCBase {
         }
     }
 
-    private completeFileTransfer(): void {
-        if (!this.fileMetadata) return;
-        console.log('File transfer complete:', this.receivedChunks);
-
-        Object.values(this.receivedChunks).forEach(chunk => {
-            console.log(typeof chunk);
-        })
+    private async completeFileTransfer(): void {
+        if (!this.fileMetadata || this.downloadComplete) return;
 
         // Combine all chunks into a single file (sequentially order)
         const receivedSize = Object.values(this.receivedChunks).reduce((acc, chunk) => acc + chunk.byteLength, 0);
@@ -455,6 +460,26 @@ export class WebRTCReceiver extends WebRTCBase {
 
         // Create download link
         const blob = new Blob([combinedBuffer], { type: this.fileMetadata.type });
+
+        // checksum verification
+        const blobBuffer = combinedBuffer.buffer;
+        const hashBuffer = await crypto.subtle.digest('SHA-256', blobBuffer);
+        const hashHex = Array.from(new Uint8Array(hashBuffer))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+
+        this.downloadComplete = true;
+
+        if (hashHex !== this.fileMetadata.checksum) {
+            console.error('❌ Checksum mismatch! File may be corrupted.');
+            this.events.onError?.('Checksum mismatch! File may be corrupted.');
+            return;
+        } else {
+            console.log('Checksum verified. File integrity intact.');
+            console.log('File checksum:', hashHex);
+            console.log('Expected checksum:', this.fileMetadata.checksum);
+        }
+
         const url = URL.createObjectURL(blob);
 
         // Trigger download

@@ -10,10 +10,12 @@
         bytesTransferred: 0, 
         totalBytes: 0
     });
+    
     let errorMessage = $state('');
     let file: File | null = $state(null);
     let pollingInterval: NodeJS.Timeout | null = $state(null);
     let senderWebRTC: WebRTCSender | null = $state(null);
+    let ready: boolean = $state(false);
 
     let name = $state('');
     let size = $state(0);
@@ -90,55 +92,7 @@
         }
     }
 
-    async function testWebRTCConnection(): Promise<boolean> {
-        return new Promise((resolve) => {
-            const testPC = new RTCPeerConnection(rtcConfiguration);
-            let connected = false;
-
-            testPC.onconnectionstatechange = () => {
-                console.log('Test connection state:', testPC.connectionState);
-                if (testPC.connectionState === 'connected') {
-                    connected = true;
-                    testPC.close();
-                    resolve(true);
-                } else if (testPC.connectionState === 'failed') {
-                    testPC.close();
-                    resolve(false);
-                }
-            };
-
-            // Create data channel to trigger connection
-            const dc = testPC.createDataChannel('test');
-            dc.onopen = () => {
-                connected = true;
-                testPC.close();
-                resolve(true);
-            };
-
-            testPC.createOffer()
-                .then(offer => testPC.setLocalDescription(offer))
-                .catch(() => resolve(false));
-
-            // Timeout after 5 seconds
-            setTimeout(() => {
-                if (!connected) {
-                    testPC.close();
-                    resolve(false);
-                }
-            }, 6000);
-        });
-    }
-
-
     onMount(async () => {
-
-        const webrtcWorking = await testWebRTCConnection();
-        if (!webrtcWorking) {
-            console.error('❌ WebRTC connection test failed - check configuration');
-            errorMessage = 'WebRTC not working in this browser/environment';
-        } else {
-            console.log('✅ WebRTC connection test passed');
-        }
 
         senderWebRTC = new WebRTCSender({
             onConnectionStateChange: (state) => {
@@ -274,6 +228,8 @@
     formData.append('size', size.toString());
     formData.append('type', type);
     formData.append('checksum', checksum);
+
+    senderWebRTC.setMetaData(name, type, size, checksum);
 
     const offer = await senderWebRTC.createOffer().catch((err) => {
         console.error('Error creating WebRTC offer:', err);

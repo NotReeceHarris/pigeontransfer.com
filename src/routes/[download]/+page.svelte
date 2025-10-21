@@ -7,7 +7,7 @@
 
     let receiver: WebRTCReceiver | null = $state(null);
 
-    let downloadStatus = $state<'waiting' | 'connecting' | 'downloading' | 'verifying' | 'complete' | 'error'>('waiting');
+    let downloadStatus = $state<'accepting' | 'waiting' | 'connecting' | 'downloading' | 'verifying' | 'complete' | 'error'>('accepting');
     let downloadProgress = $state({ 
         percentage: 0, 
         bytesTransferred: 0, 
@@ -28,18 +28,9 @@
         return new Date(date).toLocaleString();
     }
 
-    onMount(async () => {
-        if (!data.transfer) {
-            errorMessage = 'No transfer data available.';
-            downloadStatus = 'error';
-            return;
-        }
+    async function startDownload() {
 
-        if (!data.offer) {
-            errorMessage = 'No WebRTC offer found for this transfer.';
-            downloadStatus = 'error';
-            return;
-        }
+        if (!data.transfer && downloadStatus !== 'accepting') return;
 
         receiver = new WebRTCReceiver({
             onConnectionStateChange: (state) => {
@@ -85,6 +76,13 @@
             }
         });
 
+        receiver.setMetaData(
+            data.transfer.filename,
+            data.transfer.mimeType,
+            Number(data.transfer.bytes),
+            data.transfer.checksum
+        )
+
         try {
             // Set sender's offer and create answer
             const answer = await receiver.setOffer({
@@ -109,7 +107,6 @@
             });
 
             const result = await response.json();
-            console.log('Server response:', result);
 
             if (!response.ok) {
                 errorMessage = result.error || 'Failed to send WebRTC answer to server.';
@@ -162,6 +159,20 @@
             errorMessage = `WebRTC setup failed: ${error}`;
             downloadStatus = 'error';
         }
+    }
+
+    onMount(async () => {
+        if (!data.transfer) {
+            errorMessage = 'No transfer data available.';
+            downloadStatus = 'error';
+            return;
+        }
+
+        if (!data.offer) {
+            errorMessage = 'No WebRTC offer found for this transfer.';
+            downloadStatus = 'error';
+            return;
+        }
     });
 
     onDestroy(() => {
@@ -198,103 +209,123 @@
                 </div>
             </div>
             
-            <div class="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                    <span class="font-medium text-gray-700">Created:</span>
-                    <span class="text-gray-600">{formatDate(data.transfer.createdAt)}</span>
+            <div class="flex flex-col gap-2">
+                
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="font-medium text-gray-700">Created:</span>
+                        <span class="text-gray-600">{formatDate(data.transfer.createdAt)}</span>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-700">Status:</span>
+                        <span class="text-gray-600">
+                            {#if downloadStatus === 'accepting'}
+                                <span class="text-yellow-600">Waiting</span>
+                            {:else if downloadStatus === 'waiting'}
+                                <span class="text-yellow-600">Waiting</span>
+                            {:else if downloadStatus === 'connecting'}
+                                <span class="text-blue-600">Connecting</span>
+                            {:else if downloadStatus === 'downloading'}
+                                <span class="text-green-600">Downloading</span>
+                            {:else if downloadStatus === 'complete'}
+                                <span class="text-green-600">Complete</span>
+                            {:else if downloadStatus === 'error'}
+                                <span class="text-red-600">Error</span>
+                            {/if}
+                        </span>
+                    </div>
                 </div>
-                <div>
-                    <span class="font-medium text-gray-700">Status:</span>
-                    <span class="text-gray-600">
-                        {#if downloadStatus === 'waiting'}
-                            <span class="text-yellow-600">Waiting</span>
-                        {:else if downloadStatus === 'connecting'}
-                            <span class="text-blue-600">Connecting</span>
-                        {:else if downloadStatus === 'downloading'}
-                            <span class="text-green-600">Downloading</span>
-                        {:else if downloadStatus === 'complete'}
-                            <span class="text-green-600">Complete</span>
-                        {:else if downloadStatus === 'error'}
-                            <span class="text-red-600">Error</span>
-                        {/if}
-                    </span>
+
+                <div class="text-sm flex flex-col">
+                    <span class="font-medium text-gray-700">Checksum</span>
+                    <span class="text-gray-600">{data.transfer.checksum}</span>
                 </div>
+
             </div>
         </div>
 
-        <!-- Connection Status -->
-        {#if connectionMessage}
-            <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="text-sm text-blue-700 text-center">{connectionMessage}</p>
-            </div>
+        {#if downloadStatus === "accepting"}
+            <button onclick={()=>startDownload()} type="button" class="w-full cursor-pointer bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                Download file
+            </button>
+        {:else}
+
+            <!-- Connection Status -->
+            {#if connectionMessage}
+                <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-sm text-blue-700 text-left">{connectionMessage}</p>
+                </div>
+            {/if}
+
+            <!-- Download Status -->
+            {#if downloadStatus === 'waiting'}
+                <div class="text-center">
+                    <button 
+                        class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled
+                    >
+                        Preparing Download...
+                    </button>
+                </div>
+            {:else if downloadStatus === 'connecting'}
+                <div class="text-center">
+                    <div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <p class="text-gray-600">Connecting to sender...</p>
+                </div>
+            {:else if downloadStatus === 'downloading'}
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">Downloading...</span>
+                        <span class="text-sm text-gray-500">{downloadProgress.percentage.toFixed(1)}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
+                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: {downloadProgress.percentage}%"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 text-center">
+                        {formatFileSize(downloadProgress.bytesTransferred)} of {formatFileSize(downloadProgress.totalBytes)}
+                    </p>
+                </div>
+            {:else if downloadStatus === 'verifying'}
+                <div class="text-center">
+                    <div class="animate-spin w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <p class="text-gray-600">Verifying file integrity...</p>
+                </div>
+            {:else if downloadStatus === 'complete'}
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                    <svg class="w-12 h-12 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <h3 class="text-lg font-semibold text-green-900 mb-2">Download Complete!</h3>
+                    <p class="text-green-700 text-sm">
+                        Your file should now be downloading to your device.
+                        {#if isLargeFile}
+                            <br>Large files are temporarily stored in your browser for better performance.
+                        {/if}
+                    </p>
+                </div>
+            {:else if downloadStatus === 'error'}
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                    <svg class="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h3 class="text-lg font-semibold text-red-900 mb-2">Download Failed</h3>
+                    <p class="text-red-700 text-sm mb-4">{errorMessage}</p>
+                    <button 
+                        class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                        onclick={() => goto(`/${data.transfer.code}`)}
+                    >
+                        Try Again
+                    </button>
+                </div>
+            {/if}
+            
+            {#if downloadStatus !== 'waiting' && downloadStatus !== 'complete'}
+                <div class="mt-4 text-center">
+                    <p class="text-xs text-gray-500">Keep this page open during the transfer</p>
+                </div>
+            {/if}
+
         {/if}
 
-        <!-- Download Status -->
-        {#if downloadStatus === 'waiting'}
-            <div class="text-center">
-                <button 
-                    class="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled
-                >
-                    Preparing Download...
-                </button>
-            </div>
-        {:else if downloadStatus === 'connecting'}
-            <div class="text-center">
-                <div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p class="text-gray-600">Connecting to sender...</p>
-            </div>
-        {:else if downloadStatus === 'downloading'}
-            <div>
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium text-gray-700">Downloading...</span>
-                    <span class="text-sm text-gray-500">{downloadProgress.percentage.toFixed(1)}%</span>
-                </div>
-                <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
-                    <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: {downloadProgress.percentage}%"></div>
-                </div>
-                <p class="text-xs text-gray-500 text-center">
-                    {formatFileSize(downloadProgress.bytesTransferred)} of {formatFileSize(downloadProgress.totalBytes)}
-                </p>
-            </div>
-        {:else if downloadStatus === 'verifying'}
-            <div class="text-center">
-                <div class="animate-spin w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p class="text-gray-600">Verifying file integrity...</p>
-            </div>
-        {:else if downloadStatus === 'complete'}
-            <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                <svg class="w-12 h-12 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-                <h3 class="text-lg font-semibold text-green-900 mb-2">Download Complete!</h3>
-                <p class="text-green-700 text-sm">
-                    Your file should now be downloading to your device.
-                    {#if isLargeFile}
-                        <br>Large files are temporarily stored in your browser for better performance.
-                    {/if}
-                </p>
-            </div>
-        {:else if downloadStatus === 'error'}
-            <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-                <svg class="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-                <h3 class="text-lg font-semibold text-red-900 mb-2">Download Failed</h3>
-                <p class="text-red-700 text-sm mb-4">{errorMessage}</p>
-                <button 
-                    class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                    onclick={() => goto(`/${data.transfer.code}`)}
-                >
-                    Try Again
-                </button>
-            </div>
-        {/if}
-        
-        {#if downloadStatus !== 'waiting' && downloadStatus !== 'complete'}
-            <div class="mt-4 text-center">
-                <p class="text-xs text-gray-500">Keep this page open during the transfer</p>
-            </div>
-        {/if}
     </div>
 {/if}
