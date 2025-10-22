@@ -88,6 +88,8 @@ export const actions = {
             const expiresAt = new Date();
             expiresAt.setHours(expiresAt.getHours() + 24);
 
+            const verification = crypto.randomUUID().replace(/-/g, '').slice(0, 64);
+
             // Insert transfer record
             const result = await db.insert(transfer).values({
                 code,
@@ -97,11 +99,12 @@ export const actions = {
                 checksum,
                 expiresAt,
                 offer,
-                virusChecked
+                virusChecked,
+                verification: verification
             }).returning({ id: transfer.id, code: transfer.code });
 
             if (result.length > 0) {
-                return { success: true, code: result[0].code };
+                return { success: true, code: result[0].code, verification: verification };
             } else {
                 return { success: false, error: 'Failed to create transfer' };
             }

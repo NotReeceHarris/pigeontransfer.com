@@ -1,6 +1,7 @@
 import { db } from '$lib/server/db';
 import { transfer } from '$lib/server/db/schema';
 import { eq } from 'drizzle-orm';
+import type { Actions } from './$types';
 
 export const load = async ({ params }) => {
     const code = params.download;
@@ -67,3 +68,31 @@ export const load = async ({ params }) => {
         };
     }
 };
+
+export const actions = {
+    downloaded: async ({ params, request }) => {
+
+        const formData = await request.formData();
+
+        if (!formData) {
+            return { success: false, error: 'Invalid form data' };
+        }
+
+        const verification = formData.get('verification');
+        const code = params.download;
+
+        if (!verification || typeof verification !== 'string') {
+            return { success: false, error: 'Invalid verification token' };
+        }
+
+        if (!code || code.length !== 6) {
+            return { success: false, error: 'Invalid transfer code' };
+        }
+
+        console.log({
+            code,
+            verification
+        })
+
+    }
+} satisfies Actions;

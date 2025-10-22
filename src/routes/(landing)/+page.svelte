@@ -2,29 +2,28 @@
     import { enhance } from "$app/forms";
     import { page } from "$app/state";
     import { onDestroy, onMount } from "svelte";
-    import { WebRTCSender, rtcConfiguration } from '$lib/utils/webrtc';
+    import { WebRTCSender } from '$lib/utils/webrtc';
+    import type { SubmitFunction } from "./$types";
+    import { browser } from "$app/environment";
     
-    let status: ('upload' | 'waiting' | 'connected' | 'transferring' | 'complete' | 'error') = $state('upload');
-    let transferProgress = $state({ 
-        percentage: 0, 
-        bytesTransferred: 0, 
-        totalBytes: 0
-    });
-    
-    let errorMessage = $state('');
-    let file: File | null = $state(null);
     let pollingInterval: NodeJS.Timeout | null = $state(null);
     let senderWebRTC: WebRTCSender | null = $state(null);
-    let ready: boolean = $state(false);
+    let dropZone: HTMLLabelElement | null = $state(null);
 
+    let connectionMessage = $state('');
+    let errorMessage = $state('');
+    let status: ('upload' | 'waiting' | 'connected' | 'transferring' | 'complete' | 'error') = $state('upload');
+    let transferProgress = $state({ percentage: 0, bytesTransferred: 0, totalBytes: 0});
+
+    let file: File | null = $state(null);
+    let code = $state('');
+    let offer: RTCSessionDescriptionInit | null = $state(null);
+
+    /* File Metadata */
     let name = $state('');
     let size = $state(0);
     let type = $state('');
     let checksum = $state('');
-    let code = $state('');
-    let connectionMessage = $state('');
-
-    let dropZone: HTMLLabelElement | null = $state(null);
 
     async function handleFileUpload(file: File) {
         name = file.name;
@@ -101,7 +100,7 @@
                 if (state === 'connected') {
                     status = 'connected';
                     connectionMessage = '✅ Connected to recipient!';
-                    console.log('🎉 Sender fully connected to receiver!');
+                    console.log('Sender fully connected to receiver!');
                 } else if (state === 'connecting') {
                     connectionMessage = '🔄 Connecting to recipient...';
                 } else if (state === 'failed') {
@@ -110,7 +109,7 @@
                 }
             },
             onDataChannelOpen: () => {
-                console.log('✅ Sender data channel opened');
+                console.log('Sender data channel opened');
                 connectionMessage = '📡 Data channel ready - establishing connection...';
             },
             onProgress: (progress) => {
@@ -123,7 +122,7 @@
                 }
             },
             onFileComplete: () => {
-                console.log('✅ File transfer complete!');
+                console.log('File transfer complete!');
                 status = 'complete';
                 connectionMessage = '✅ File transfer completed successfully!';
             },
@@ -135,7 +134,7 @@
         });
 
         // Pre-create the offer to reduce wait time later
-        await senderWebRTC.createOffer().catch((err) => {
+        offer = await senderWebRTC.createOffer().catch((err) => {
             console.error('Error creating WebRTC offer:', err);
             return null;
         });
@@ -169,17 +168,17 @@
             return;
         }
 
-        senderWebRTC.setFile(file);
+        await senderWebRTC.setFile(file);
 
         // Wait for data channel to be ready
         let attempts = 0;
-        const maxAttempts = 30; // 3 seconds total
+        const maxAttempts = 60;
         
         while (attempts < maxAttempts) {
             if (senderWebRTC.getConnectionState() === 'connected') {
                 try {
                     await senderWebRTC.startTransfer();
-                    console.log('📤 File transfer started!');
+                    console.log('File transfer started!');
                     return;
                 } catch (error) {
                     console.error('Error starting transfer:', error);
@@ -199,6 +198,120 @@
         status = 'error';
     }
 
+    const handleCreate: SubmitFunction = async ({ formData }) => {
+
+        if (!file) {
+            errorMessage = 'Please select a file to transfer.';
+            return;
+        }
+
+        if (!senderWebRTC) {
+            errorMessage = 'WebRTC sender instance is not initialized.';
+            return;
+        }
+
+        formData.delete('file');
+        formData.append('name', name);
+        formData.append('size', size.toString());
+        formData.append('type', type);
+        formData.append('checksum', checksum);
+
+        senderWebRTC.setMetaData(name, type, size, checksum);
+
+        offer = await senderWebRTC.createOffer().catch((err) => {
+            console.error('Error creating WebRTC offer:', err);
+            return null;
+        });
+
+        if (!offer || !offer.sdp || !offer.type || offer.type !== 'offer') {
+            errorMessage = 'Failed to create WebRTC offer.';
+            return;
+        }
+
+        formData.append('offer', offer.sdp);
+
+        return ({ result }) => {
+            
+            if (!!senderWebRTC && result.type === 'success' && result.data && result.data.success && result.data.code && result.data.verification && !result.data.error && typeof result.data.code === 'string' && typeof result.data.verification === 'string') {
+                
+                code = result.data.code;
+                const verification = result.data.verification;
+                senderWebRTC.setVerification(verification);
+
+                status = 'waiting';
+                errorMessage = '';
+                connectionMessage = '⏳ Waiting for recipient to connect...';
+                
+                pollingInterval = setInterval(async () => {
+                    if (!code || !senderWebRTC || !browser) return;
+
+                    const response = await fetch(`/api/${code}/answer`).catch((err) => {
+                        console.error('Error fetching answer:', err);
+                        return null;
+                    });
+
+                    if (!response || !response.ok) return;
+
+                    const data = await response.json();
+                    if (data.answer && !data.error) {
+                        console.log('Received answer from recipient, setting answer...');
+                        clearInterval(pollingInterval!);
+                        pollingInterval = null;
+
+                        await senderWebRTC.setAnswer({
+                            type: 'answer',
+                            sdp: data.answer
+                        });
+
+                        // Don't start transfer immediately - wait for connection
+                        connectionMessage = '🔄 Establishing connection...';
+                        
+                        // Monitor connection state and start transfer when ready
+                        const connectionCheck = setInterval(() => {
+                            if (!senderWebRTC) return;
+
+                            const state = senderWebRTC.getConnectionState();
+                            console.log('Current connection state:', state);
+                            
+                            if (state === 'connected') {
+                                clearInterval(connectionCheck);
+                                console.log('Connection established, starting transfer...');
+                                connectionMessage = '✅ Connected! Starting transfer...';
+                                startFileTransfer();
+                            } else if (state === 'failed' || state === 'disconnected') {
+                                clearInterval(connectionCheck);
+                                status = 'error';
+                                errorMessage = `Connection failed: ${state}`;
+                            }
+                        }, 500);
+
+                        // Timeout after 10 seconds
+                        setTimeout(() => {
+
+                            if (!senderWebRTC) return;
+
+                            clearInterval(connectionCheck);
+                            if (senderWebRTC.getConnectionState() !== 'connected') {
+                                status = 'error';
+                                errorMessage = 'Connection timeout - failed to establish connection';
+                            }
+                        }, 10000);
+
+                    } else if (data.error) {
+                        clearInterval(pollingInterval!);
+                        pollingInterval = null;
+                        status = 'error';
+                        errorMessage = data.error;
+                    }
+                }, 2500);
+
+            } else if (result.type === 'error' || result.data.error) {
+                console.log('Form submission error:', result);
+                errorMessage = (result as unknown as {data:{error:string}}).data?.error || 'An unknown error occurred.';
+            }
+        }
+    }
+
     onDestroy(() => {
         if (pollingInterval) {
             clearInterval(pollingInterval);
@@ -211,118 +324,7 @@
 
 </script>
 
-<form action="?/create" method="post" use:enhance={async ({ formData }) => {
-
-    if (!file) {
-        errorMessage = 'Please select a file to transfer.';
-        return;
-    }
-
-    if (!senderWebRTC) {
-        errorMessage = 'WebRTC sender instance is not initialized.';
-        return;
-    }
-
-    formData.delete('file');
-    formData.append('name', name);
-    formData.append('size', size.toString());
-    formData.append('type', type);
-    formData.append('checksum', checksum);
-
-    senderWebRTC.setMetaData(name, type, size, checksum);
-
-    const offer = await senderWebRTC.createOffer().catch((err) => {
-        console.error('Error creating WebRTC offer:', err);
-        return null;
-    });
-
-    if (!offer || !offer.sdp || !offer.type || offer.type !== 'offer') {
-        errorMessage = 'Failed to create WebRTC offer.';
-        return;
-    }
-
-    formData.append('offer', offer.sdp);
-
-    return ({ result }) => {
-
-        console.log(result)
-        
-        if (result.type === 'success' && result.data && result.data.success && result.data.code && !result.data.error && typeof result.data.code === 'string') {
-            
-            code = result.data.code;
-            status = 'waiting';
-            errorMessage = '';
-            connectionMessage = '⏳ Waiting for recipient to connect...';
-            
-            pollingInterval = setInterval(async () => {
-                if (!code || !senderWebRTC) return;
-
-                const response = await fetch(`/api/${code}/answer`).catch((err) => {
-                    console.error('Error fetching answer:', err);
-                    return null;
-                });
-
-                if (!response || !response.ok) return;
-
-                const data = await response.json();
-                if (data.answer && !data.error) {
-                    console.log('Received answer from recipient, setting answer...');
-                    clearInterval(pollingInterval!);
-                    pollingInterval = null;
-
-                    await senderWebRTC.setAnswer({
-                        type: 'answer',
-                        sdp: data.answer
-                    });
-
-                    // Don't start transfer immediately - wait for connection
-                    connectionMessage = '🔄 Establishing connection...';
-                    
-                    // Monitor connection state and start transfer when ready
-                    const connectionCheck = setInterval(() => {
-                        if (!senderWebRTC) return;
-
-                        const state = senderWebRTC.getConnectionState();
-                        console.log('Current connection state:', state);
-                        
-                        if (state === 'connected') {
-                            clearInterval(connectionCheck);
-                            console.log('✅ Connection established, starting transfer...');
-                            connectionMessage = '✅ Connected! Starting transfer...';
-                            startFileTransfer();
-                        } else if (state === 'failed' || state === 'disconnected') {
-                            clearInterval(connectionCheck);
-                            status = 'error';
-                            errorMessage = `Connection failed: ${state}`;
-                        }
-                    }, 500);
-
-                    // Timeout after 10 seconds
-                    setTimeout(() => {
-
-                        if (!senderWebRTC) return;
-
-                        clearInterval(connectionCheck);
-                        if (senderWebRTC.getConnectionState() !== 'connected') {
-                            status = 'error';
-                            errorMessage = 'Connection timeout - failed to establish connection';
-                        }
-                    }, 10000);
-
-                } else if (data.error) {
-                    clearInterval(pollingInterval!);
-                    pollingInterval = null;
-                    status = 'error';
-                    errorMessage = data.error;
-                }
-            }, 2500);
-
-        } else if (result.type === 'error' || result.data.error) {
-            console.log('Form submission error:', result);
-            errorMessage = (result as unknown as {data:{error:string}}).data?.error || 'An unknown error occurred.';
-        }
-
-    }}} class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col gap-4">
+<form action="?/create" method="post" use:enhance={handleCreate} class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col gap-4">
 
     {#if file}
         <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
@@ -345,30 +347,36 @@
         </div> 
     {/if}
 
-    <button type="submit" disabled={!!code} class="{!code ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'} bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-        Transfer a file
-    </button>
-
     {#if code}
-        <div class="flex flex-col gap-2 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
-            <p class="text-sm">File transfer created! Share this link with the recipient:</p>
-            <p class="text-lg font-mono">
-                {page.url.origin}/{code}
-            </p>
-            <p class="text-sm">
-                Please <strong>DO NOT</strong> close this page until the recipient has downloaded the file.
-            </p>
-        </div>
+        {#if status === 'waiting'}
+            <div class="flex flex-col gap-2 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
+                <p class="text-sm">File transfer created! Share this link with the recipient:</p>
+                <p class="text-lg font-mono">
+                    {page.url.origin}/{code}
+                </p>
+                <p class="text-sm">
+                    Please <strong>DO NOT</strong> close this page until the recipient has downloaded the file.
+                </p>
+            </div>
+        {/if}
 
         <div class="flex flex-col gap-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             {#if status === 'waiting'}
-                <p class="text-sm text-blue-700">{connectionMessage}</p>
+                <p class="text-sm text-blue-700">
+                    {connectionMessage}
+                </p>
             {:else if status === 'connected'}
-                <p class="text-sm text-green-700">{connectionMessage}</p>
+                <p class="text-sm text-green-700">
+                    {connectionMessage}
+                </p>
             {:else if status === 'transferring'}
-                <p class="text-sm text-blue-700">📤 Transferring file... ({transferProgress.percentage.toFixed(2)} %)</p>
+                <p class="text-sm text-blue-700">
+                    📤 Transferring file... ({transferProgress.percentage.toFixed(2)} %)
+                </p>
             {:else if status === 'complete'}
-                <p class="text-sm text-green-700">{connectionMessage}</p>
+                <p class="text-sm text-green-700">
+                    {connectionMessage}
+                </p>
             {:else if status === 'error'}
                 <p class="text-sm text-red-700">
                     {errorMessage || 'An error occurred during the file transfer.'}
@@ -379,6 +387,10 @@
                 </p>
             {/if}
         </div>
+    {:else}
+        <button type="submit" disabled={!!code} class="{!code ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'} bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+            Transfer a file
+        </button>
     {/if}
 
     {#if errorMessage}

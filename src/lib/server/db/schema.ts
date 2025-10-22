@@ -12,7 +12,9 @@ export const transfer = pgTable('transfer', {
 	/* Security */
 	password: varchar('password', { length: 97 }),
 	checksum: varchar('checksum', { length: 64 }).notNull(),
+	verification: varchar('verification', { length: 64 }).notNull(),
 	virusChecked: boolean('virus_checked').notNull().default(false),
+	virusScanId: integer('virus_scan_id'),
 	
 	/* Download Status */
 	complete: boolean('complete').notNull().default(false),

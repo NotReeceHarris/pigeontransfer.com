@@ -30,51 +30,7 @@
 
     async function startDownload() {
 
-        if (!data.transfer && downloadStatus !== 'accepting') return;
-
-        receiver = new WebRTCReceiver({
-            onConnectionStateChange: (state) => {
-                console.log('Receiver connection state:', state);
-                
-                if (state === 'connected') {
-                    downloadStatus = 'connecting';
-                    connectionMessage = '✅ Connected to sender - waiting for file...';
-                    console.log('🎉 Receiver connected to sender!');
-                } else if (state === 'connecting') {
-                    connectionMessage = '🔄 Connecting to sender...';
-                } else if (state === 'failed') {
-                    downloadStatus = 'error';
-                    connectionMessage = '❌ Connection failed';
-                    errorMessage = 'Failed to connect to sender';
-                }
-            },
-            onDataChannelOpen: () => {
-                console.log('✅ Receiver data channel opened');
-                connectionMessage = '📡 Data channel ready - waiting for file transfer...';
-            },
-            onProgress: (progress) => {
-
-                downloadProgress = {
-                    percentage: (progress.bytesTransferred / data.transfer.bytes) * 100,
-                    bytesTransferred: progress.bytesTransferred,
-                    totalBytes: data.transfer.bytes
-                };
-                
-                if (progress.totalChunks !== progress.chunksTransferred) {
-                    downloadStatus = 'downloading';
-                }
-            },
-            onFileComplete: () => {
-                console.log('✅ File download complete!');
-                downloadStatus = 'complete';
-                connectionMessage = '✅ File downloaded successfully!';
-            },
-            onError: (error) => {
-                console.error('WebRTC error:', error);
-                errorMessage = error;
-                downloadStatus = 'error';
-            }
-        });
+        if (!receiver || !data.transfer || downloadStatus !== 'accepting') return;
 
         receiver.setMetaData(
             data.transfer.filename,
@@ -96,7 +52,7 @@
                 return;
             }
 
-            console.log('✅ Created WebRTC answer, sending to server...');
+            console.log('Created WebRTC answer, sending to server...');
 
             const formData = new FormData();
             formData.append('answer', answer.sdp);
@@ -120,7 +76,7 @@
                 return;
             }
 
-            console.log('✅ Answer sent to server successfully');
+            console.log('Answer sent to server successfully');
             downloadStatus = 'connecting';
             connectionMessage = '🔄 Establishing connection with sender...';
 
@@ -136,7 +92,7 @@
                 
                 if (state === 'connected') {
                     clearInterval(connectionCheck);
-                    console.log('✅ Connection established, waiting for file...');
+                    console.log('Connection established, waiting for file...');
                     connectionMessage = '✅ Connected! Waiting for file transfer to start...';
                 } else if (state === 'failed' || state === 'disconnected') {
                     clearInterval(connectionCheck);
@@ -173,6 +129,58 @@
             downloadStatus = 'error';
             return;
         }
+
+        receiver = new WebRTCReceiver({
+            onConnectionStateChange: (state) => {
+                console.log('Receiver connection state:', state);
+                
+                if (state === 'connected') {
+                    downloadStatus = 'connecting';
+                    connectionMessage = '✅ Connected to sender - waiting for file...';
+                    console.log('🎉 Receiver connected to sender!');
+                } else if (state === 'connecting') {
+                    connectionMessage = '🔄 Connecting to sender...';
+                } else if (state === 'failed') {
+                    downloadStatus = 'error';
+                    connectionMessage = '❌ Connection failed';
+                    errorMessage = 'Failed to connect to sender';
+                }
+            },
+            onDataChannelOpen: () => {
+                console.log('Receiver data channel opened');
+                connectionMessage = '📡 Data channel ready - waiting for file transfer...';
+            },
+            onProgress: (progress) => {
+
+                downloadProgress = {
+                    percentage: (progress.bytesTransferred / data.transfer.bytes) * 100,
+                    bytesTransferred: progress.bytesTransferred,
+                    totalBytes: data.transfer.bytes
+                };
+                
+                if (progress.totalChunks !== progress.chunksTransferred) {
+                    downloadStatus = 'downloading';
+                }
+            },
+            onFileComplete: () => {
+                console.log('✅ File download complete!');
+                downloadStatus = 'complete';
+                connectionMessage = '✅ File downloaded successfully!';
+            },
+            onError: (error) => {
+                console.error('WebRTC error:', error);
+                errorMessage = error;
+                downloadStatus = 'error';
+            }
+        });
+
+        receiver.setMetaData(
+            data.transfer.filename,
+            data.transfer.mimeType,
+            Number(data.transfer.bytes),
+            data.transfer.checksum
+        );
+
     });
 
     onDestroy(() => {
@@ -209,9 +217,9 @@
                 </div>
             </div>
             
-            <div class="flex flex-col gap-2">
+            <div class="flex flex-col gap-2 text-sm">
                 
-                <div class="grid grid-cols-2 gap-4 text-sm">
+                <div class="flex gap-4">
                     <div>
                         <span class="font-medium text-gray-700">Created:</span>
                         <span class="text-gray-600">{formatDate(data.transfer.createdAt)}</span>
@@ -236,8 +244,8 @@
                     </div>
                 </div>
 
-                <div class="text-sm flex flex-col">
-                    <span class="font-medium text-gray-700">Checksum</span>
+                <div>
+                    <span class="font-medium text-gray-700">Checksum:</span>
                     <span class="text-gray-600">{data.transfer.checksum}</span>
                 </div>
 
@@ -266,7 +274,7 @@
         {:else}
 
             <!-- Connection Status -->
-            {#if connectionMessage}
+            {#if connectionMessage && downloadStatus !== 'complete'}
                 <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <p class="text-sm text-blue-700 text-left">{connectionMessage}</p>
                 </div>
@@ -296,7 +304,7 @@
                     <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
                         <div class="bg-blue-600 h-2 rounded-full transition-all" style="width: {downloadProgress.percentage}%"></div>
                     </div>
-                    <p class="text-xs text-gray-500 text-center">
+                    <p class="text-xs text-gray-500 text-right font-mono">
                         {formatFileSize(downloadProgress.bytesTransferred)} of {formatFileSize(downloadProgress.totalBytes)}
                     </p>
                 </div>
@@ -306,11 +314,8 @@
                     <p class="text-gray-600">Verifying file integrity...</p>
                 </div>
             {:else if downloadStatus === 'complete'}
-                <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                    <svg class="w-12 h-12 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    <h3 class="text-lg font-semibold text-green-900 mb-2">Download Complete!</h3>
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-left flex flex-col">
+                    <h3 class="text-lg font-semibold text-green-900">Download Complete!</h3>
                     <p class="text-green-700 text-sm">
                         Your file should now be downloading to your device.
                         {#if isLargeFile}
@@ -319,15 +324,12 @@
                     </p>
                 </div>
             {:else if downloadStatus === 'error'}
-                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-                    <svg class="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <h3 class="text-lg font-semibold text-red-900 mb-2">Download Failed</h3>
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-left flex flex-col">
+                    <h3 class="text-lg font-semibold text-red-900">Download Failed</h3>
                     <p class="text-red-700 text-sm mb-4">{errorMessage}</p>
                     <button 
                         class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                        onclick={() => goto(`/${data.transfer.code}`)}
+                        onclick={() => window.location.reload()}
                     >
                         Try Again
                     </button>

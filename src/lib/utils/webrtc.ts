@@ -5,16 +5,14 @@ export const rtcConfiguration: RTCConfiguration = {
             urls: [
                 "stun:stun.l.google.com:19302",
                 "stun:stun1.l.google.com:19302",
-                "stun:stun2.l.google.com:19302",
-                "stun:stun3.l.google.com:19302",
-                "stun:stun4.l.google.com:19302"
+                "stun:stun.stunprotocol.org:3478",
+                "stun:stun.sipnet.net:3478",
+                "stun:stun.voiparound.com:3478",
+                "stun:stun.voipbuster.com:3478",
             ]
         },
-        // Remove the broken TURN server for now
-        // Add this back later when you have working TURN credentials
     ],
     iceCandidatePoolSize: 10,
-    // Remove iceTransportPolicy: 'relay' for now
 };
 
 //export const chunkSize = 16384; // 16KB
@@ -147,6 +145,7 @@ export class WebRTCSender extends WebRTCBase {
     private file: File | null = null;
     private fileReader: FileReader = new FileReader();
     private connectionConfirmed: boolean = false
+    private verification: string | null = null;
 
     constructor(events: WebRTCEvents = {}) {
         super(events);
@@ -213,20 +212,22 @@ export class WebRTCSender extends WebRTCBase {
     }
 
     // Set file to transfer
-    public setFile(file: File): void {
+    public async setFile(file: File): Promise<void> {
         this.file = file;
 
         this.fileReader = new FileReader();
-        this.fileReader.onerror = (error) => {
-            console.error('FileReader error:', error);
-            this.events.onError?.(`File read error: ${error}`);
-        }
-
-        this.fileReader.onload = () => {
-            console.log('File ready for transfer:', file.name, file.size, 'bytes');
-        }
-
-        this.fileReader.readAsArrayBuffer(file);
+        
+        return new Promise((resolve, reject) => {
+            this.fileReader.onload = () => {
+                console.log('File loaded for transfer:', file.name, file.size, 'bytes');
+                resolve();
+            };
+            this.fileReader.onerror = (error) => {
+                console.error('Error reading file:', error);
+                reject(error);
+            };
+            this.fileReader.readAsArrayBuffer(file);
+        });
     }
 
     // Create and return an offer
@@ -241,62 +242,73 @@ export class WebRTCSender extends WebRTCBase {
         await this.pc.setRemoteDescription(answer);
     }
 
+    public setVerification(verification: string): void {
+        this.verification = verification;
+    }
+
     // Start file transfer
     public async startTransfer(): Promise<void> {
         if (!this.file) {
             throw new Error('No file set for transfer');
         }
 
+        if (!this.verification) {
+            throw new Error('Verification token not set');
+        }
+
+        if (!this.connectionConfirmed) {
+            throw new Error('Connection not confirmed with receiver');
+        }
+
         if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
             throw new Error('Data channel not ready');
         }
 
-        const fileBuffer = await this.file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        console.log('Starting file transfer:', this.file.name, this.file.size, 'bytes');
 
-        // Send file metadata first
-        const metadata: FileMetadata = {
-            name: this.file.name,
-            size: this.file.size,
-            type: this.file.type,
-            checksum: hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-        };
-
-        this.dataChannel.send(JSON.stringify({
-            type: 'metadata',
-            metadata: metadata
-        }));
-
-        // Wait a bit for metadata to be processed, then start sending chunks
-        setTimeout(() => this.sendNextChunk(0), 100);
+        this.sendNextChunk(0);
     }
 
     private async sendNextChunk(sequence: number): Promise<void> {
-        if (!this.fileReader || !this.dataChannel) return;
+        if (!this.fileReader || !this.dataChannel) {
+            console.log('FileReader or DataChannel not ready', {
+                fileReader: this.fileReader,
+                dataChannel: this.dataChannel
+            });
+            return;
+        }
+
+        if (this.dataChannel.readyState !== 'open') {
+            console.log('DataChannel not open', { readyState: this.dataChannel.readyState });
+            return;
+        }
+
+        console.log('Sending chunk sequence:', sequence);
 
         const fileBytes = new Uint8Array(this.fileReader.result as ArrayBuffer);
-
         const start = sequence * chunkSize;
+        const end = Math.min(start + chunkSize, fileBytes.length);
+
         if (start >= fileBytes.length) {
-            // File transfer complete
-            this.dataChannel.send(JSON.stringify({
-                type: 'transfer_complete'
-            }));
             this.events.onFileComplete?.();
             return;
         }
 
-        const end = Math.min(start + chunkSize, fileBytes.length);
         const chunk = fileBytes.slice(start, end);
         const hexChunk = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join('');
+        const isLast = end >= fileBytes.length;
 
-        this.dataChannel.send(JSON.stringify({
+        const payload = JSON.stringify({
             type: 'file_chunk',
-            sequence: sequence,
+            sequence,
             data: hexChunk,
-            isLast: end >= fileBytes.length
-        }));
+            isLast,
+            ...(isLast ? { verification: this.verification } : {})
+        });
+
+        console.log(payload)
+
+        this.dataChannel.send(payload);
 
         // Update progress
         const progress: TransferProgress = {
@@ -319,6 +331,7 @@ export class WebRTCReceiver extends WebRTCBase {
     private connectionConfirmed: boolean = false;
     private transferComplete: boolean = false;
     private downloadComplete: boolean = false;
+    private verification: string | null = null;
 
     constructor(events: WebRTCEvents = {}) {
         super(events);
@@ -380,24 +393,22 @@ export class WebRTCReceiver extends WebRTCBase {
 
     private async handleSenderMessage(message: any): Promise<void> {
         switch (message.type) {
-            case 'metadata':
-                this.fileMetadata = message.metadata;
-                this.expectedChunks = Math.ceil(message.metadata.size / chunkSize);
-                this.sendAcknowledgment(0);
-                break;
-
             case 'file_chunk':
+                console.log('Received file chunk message:', message);
                 await this.handleFileChunk(message);
                 break;
 
-            case 'transfer_complete':
-                if (!this.transferComplete) this.completeFileTransfer();
+            default:
+                console.warn('Unknown message type from sender:', message.type);
                 break;
         }
     }
 
     private async handleFileChunk(message: any): Promise<void> {
-        if (!this.fileMetadata) return;
+        if (!this.fileMetadata) {
+            console.log('First chunk sent, however metadata is not set.');
+            return;
+        };
 
         const hexEncodedData: string = message.data;
         const decodedData = new Uint8Array(hexEncodedData.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
@@ -419,8 +430,10 @@ export class WebRTCReceiver extends WebRTCBase {
 
         // If this is the last chunk, complete transfer
         if (message.isLast && !this.transferComplete) {
+            console.log('Last chunk received', message);
             this.transferComplete = true;
-            setTimeout(() => this.completeFileTransfer(), 100);
+            this.verification = message.verification;
+            this.completeFileTransfer()
         }
     }
 
@@ -441,8 +454,39 @@ export class WebRTCReceiver extends WebRTCBase {
         }
     }
 
-    private async completeFileTransfer(): void {
-        if (!this.fileMetadata || this.downloadComplete) return;
+    private async completeFileTransfer(): Promise<void> {
+        console.log('All chunks received. Verifying and preparing file...');
+        if (!this.fileMetadata || this.downloadComplete || !this.verification) {
+            console.log({
+                metadata: this.fileMetadata,
+                downloadComplete: this.downloadComplete,
+                verification: this.verification
+            })
+            return;
+        };
+
+        // Tell the server we received the file completely
+        const formData = new FormData();
+        formData.append('verification', this.verification);
+
+        const response = await fetch('?/downloaded', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData
+        }).catch((error) => {
+            console.error('Error notifying server of completion:', error);
+            return null;
+        })
+
+        if (!response || !response.ok) {
+            this.events.onError?.('Server error on completion notification');
+            return;
+        }
+
+        console.log('File transfer complete. Preparing file for download...');
+
 
         // Combine all chunks into a single file (sequentially order)
         const receivedSize = Object.values(this.receivedChunks).reduce((acc, chunk) => acc + chunk.byteLength, 0);
@@ -499,6 +543,15 @@ export class WebRTCReceiver extends WebRTCBase {
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
         return answer;
+    }
+
+    public setMetaData(name: string, type: string, size: number, hash: string): void {
+        this.fileMetadata = {
+            name: name,
+            type: type,
+            size: size,
+            checksum: hash
+        }
     }
 }
 
