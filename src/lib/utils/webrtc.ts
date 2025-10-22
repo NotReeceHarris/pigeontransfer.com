@@ -203,9 +203,7 @@ export class WebRTCSender extends WebRTCBase {
     }
 
     private handleReceiverMessage(message: any): void {
-        if (message.type === 'ready_for_chunk') {
-            this.sendNextChunk(message.sequence);
-        } else if (message.type === 'chunk_received') {
+        if (message.type === 'chunk_received') {
             // Receiver acknowledged chunk, send next one
             this.sendNextChunk(message.sequence + 1);
         }
