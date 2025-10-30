@@ -281,8 +281,6 @@ export class WebRTCSender extends WebRTCBase {
             return;
         }
 
-        console.log('Sending chunk sequence:', sequence);
-
         const fileBytes = new Uint8Array(this.fileReader.result as ArrayBuffer);
         const start = sequence * chunkSize;
         const end = Math.min(start + chunkSize, fileBytes.length);
@@ -293,18 +291,20 @@ export class WebRTCSender extends WebRTCBase {
         }
 
         const chunk = fileBytes.slice(start, end);
-        const hexChunk = Array.from(chunk).map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        // FIXED: Encode binary data to base64 for safe JSON transmission
+        const encodedChunk = btoa(String.fromCharCode(...chunk));
         const isLast = end >= fileBytes.length;
 
         const payload = JSON.stringify({
             type: 'file_chunk',
             sequence,
-            data: hexChunk,
+            data: encodedChunk,
             isLast,
             ...(isLast ? { verification: this.verification } : {})
         });
 
-        console.log(payload)
+        console.log('Sending chunk sequence:', sequence, 'size:', chunk.length, 'bytes');
 
         this.dataChannel.send(payload);
 
@@ -392,7 +392,7 @@ export class WebRTCReceiver extends WebRTCBase {
     private async handleSenderMessage(message: any): Promise<void> {
         switch (message.type) {
             case 'file_chunk':
-                console.log('Received file chunk message:', message);
+                console.log('Received file chunk sequence:', message.sequence);
                 await this.handleFileChunk(message);
                 break;
 
@@ -406,32 +406,40 @@ export class WebRTCReceiver extends WebRTCBase {
         if (!this.fileMetadata) {
             console.log('First chunk sent, however metadata is not set.');
             return;
-        };
+        }
 
-        const hexEncodedData: string = message.data;
-        const decodedData = new Uint8Array(hexEncodedData.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+        try {
+            // FIXED: Decode base64 back to binary data
+            const binaryString = atob(message.data);
+            const decodedData = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                decodedData[i] = binaryString.charCodeAt(i);
+            }
 
-        this.receivedChunks[message.sequence] = decodedData;
+            this.receivedChunks[message.sequence] = decodedData;
 
-        // Update progress
-        const bytesTransferred = this.calculateBytesTransferred();
-        const progress: TransferProgress = {
-            bytesTransferred: bytesTransferred,
-            chunksTransferred: Object.keys(this.receivedChunks).length,
-            totalChunks: this.expectedChunks
-        };
+            // Update progress
+            const bytesTransferred = this.calculateBytesTransferred();
+            const progress: TransferProgress = {
+                bytesTransferred: bytesTransferred,
+                chunksTransferred: Object.keys(this.receivedChunks).length,
+                totalChunks: this.expectedChunks
+            };
 
-        this.events.onProgress?.(progress);
+            this.events.onProgress?.(progress);
 
-        // Acknowledge chunk receipt
-        this.sendAcknowledgment(message.sequence);
+            // Acknowledge chunk receipt
+            this.sendAcknowledgment(message.sequence);
 
-        // If this is the last chunk, complete transfer
-        if (message.isLast && !this.transferComplete) {
-            console.log('Last chunk received', message);
-            this.transferComplete = true;
-            this.verification = message.verification;
-            this.completeFileTransfer()
+            // If this is the last chunk, complete transfer
+            if (message.isLast && !this.transferComplete) {
+                this.transferComplete = true;
+                this.verification = message.verification;
+                await this.completeFileTransfer();
+            }
+        } catch (error) {
+            console.error('Error decoding chunk:', error);
+            this.events.onError?.('Error decoding file chunk');
         }
     }
 
@@ -454,39 +462,54 @@ export class WebRTCReceiver extends WebRTCBase {
 
     private async completeFileTransfer(): Promise<void> {
         console.log('All chunks received. Verifying and preparing file...');
+        
         if (!this.fileMetadata || this.downloadComplete || !this.verification) {
             console.log({
                 metadata: this.fileMetadata,
                 downloadComplete: this.downloadComplete,
                 verification: this.verification
-            })
+            });
             return;
-        };
+        }
+
+        // Calculate expected chunks based on file size
+        this.expectedChunks = Math.ceil(this.fileMetadata.size / chunkSize);
+
+        // Check that there are no missing chunks
+        for (let i = 0; i < this.expectedChunks; i++) {
+            if (!this.receivedChunks[i]) {
+                console.error('Missing chunk:', i);
+                this.events.onError?.(`Missing chunk: ${i}`);
+                return;
+            }
+        }
 
         // Tell the server we received the file completely
         const formData = new FormData();
         formData.append('verification', this.verification);
 
-        const response = await fetch('?/downloaded', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: formData
-        }).catch((error) => {
-            console.error('Error notifying server of completion:', error);
-            return null;
-        })
+        try {
+            const response = await fetch('?/downloaded', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: formData
+            });
 
-        if (!response || !response.ok) {
-            this.events.onError?.('Server error on completion notification');
+            if (!response.ok) {
+                this.events.onError?.('Server error on completion notification');
+                return;
+            }
+        } catch (error) {
+            console.error('Error notifying server of completion:', error);
+            this.events.onError?.('Network error on completion notification');
             return;
         }
 
         console.log('File transfer complete. Preparing file for download...');
 
-
-        // Combine all chunks into a single file (sequentially order)
+        // Combine all chunks into a single file (sequentially ordered)
         const receivedSize = Object.values(this.receivedChunks).reduce((acc, chunk) => acc + chunk.byteLength, 0);
         const combinedBuffer = new Uint8Array(receivedSize);
         
@@ -502,7 +525,7 @@ export class WebRTCReceiver extends WebRTCBase {
         // Create download link
         const blob = new Blob([combinedBuffer], { type: this.fileMetadata.type });
 
-        // checksum verification
+        // checksum verification (optional)
         const blobBuffer = combinedBuffer.buffer;
         const hashBuffer = await crypto.subtle.digest('SHA-256', blobBuffer);
         const hashHex = Array.from(new Uint8Array(hashBuffer))
@@ -549,7 +572,9 @@ export class WebRTCReceiver extends WebRTCBase {
             type: type,
             size: size,
             checksum: hash
-        }
+        };
+        // Calculate expected chunks when metadata is set
+        this.expectedChunks = Math.ceil(size / chunkSize);
     }
 }
 
