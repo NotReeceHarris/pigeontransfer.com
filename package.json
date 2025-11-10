@@ -30,7 +30,7 @@
     "@types/node": "24.10.0",
     "drizzle-kit": "0.31.6",
     "drizzle-orm": "0.44.7",
-    "svelte": "5.43.4",
+    "svelte": "5.43.5",
     "svelte-check": "^4.3.2",
     "tailwindcss": "4.1.17",
     "typescript": "^5.9.2",
