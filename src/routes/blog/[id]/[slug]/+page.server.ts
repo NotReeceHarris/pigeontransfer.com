@@ -1,6 +1,7 @@
 import { client } from '$lib/server/cms';
 import { redirect } from '@sveltejs/kit';
 import slugify from 'slugify';
+import readingTime from 'reading-time';
 
 export const load = async ({ params }) => {
 
@@ -38,7 +39,12 @@ export const load = async ({ params }) => {
                 isAiGenerated: post.fields.aiGenerated || false,
                 isAiEnhanced: post.fields.aiEnhanced || false,
                 aiTools: `${post.fields.aiTools}`
-            }
+            },
+
+            created: post.sys.createdAt || null,
+            updated: post.sys.updatedAt || null,
+
+            readtime: readingTime(post.fields.content.toString()).text || '0 min read',
         }
     }
 };

@@ -77,6 +77,13 @@
   border-bottom: 1px solid #d1d9e0b3;
 }
 
+.markdown-body .metadata {
+  border-bottom: 1px solid #d1d9e0b3;
+  margin: .67em 0;
+  margin-bottom: .80em;
+  padding-bottom: 1.2em;
+}
+
 .markdown-body mark {
   background-color: #fff8c5;
   color: #1f2328;

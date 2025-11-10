@@ -21,7 +21,7 @@
 
 			{#if page.url.pathname.startsWith('/blog')}
 				<a href="/" class="hover:text-blue-600">
-					Transfer Files
+					Transfer Files Now
 				</a>
 			{:else}
 				<a href="/blog" class="hover:text-blue-600">

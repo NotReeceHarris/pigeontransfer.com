@@ -461,7 +461,7 @@
                 
             </button>
 
-            <p class="text-sm text-gray-500">
+            <p class="text-sm text-gray-500 leading-0 pt-3 pb-0.5">
                 By clicking "{buttonText}", you agree to our <a href="/docs/terms" class="text-blue-600 underline">Terms of Service</a> and <a href="/docs/privacy" class="text-blue-600 underline">Privacy Policy</a>.
             </p>
         </div>
