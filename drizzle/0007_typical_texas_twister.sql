@@ -1,0 +1,1 @@
+ALTER TABLE "transfer" ALTER COLUMN "verification" SET NOT NULL;

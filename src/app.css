@@ -1,0 +1,14 @@
+@import 'tailwindcss';
+@import './style/markdown.css';
+
+@theme {
+    --color-mint: #f1f6f9;
+    --color-moss: #004645;
+    --color-grass: #5f9b39;
+    --color-marble: #f6f6f6;
+    --color-mustard: #ffcb3a;
+    --color-ocean: #69c8f9;
+    --color-cave: #b6b7b7;
+
+    --font-family-poppins: 'Poppins', sans-serif;
+}

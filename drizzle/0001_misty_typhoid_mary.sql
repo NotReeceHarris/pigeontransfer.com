@@ -1,0 +1,1 @@
+ALTER TABLE "transfer" ADD COLUMN "checksum" varchar(64) NOT NULL;
