@@ -1,9 +1,11 @@
 import * as contentful from 'contentful'
 import { env } from '$env/dynamic/private';
-const { CONTENTFUL_TOKEN, CONTENTFUL_SPACE } = env;
+
+if (!env.CONTENTFUL_TOKEN) throw new Error('CONTENTFUL_TOKEN is not set');
+if (!env.CONTENTFUL_SPACE) throw new Error('CONTENTFUL_SPACE is not set');
 
 export const client = contentful.createClient({
-    space: CONTENTFUL_SPACE,
+    space: env.CONTENTFUL_SPACE,
     environment: 'master',
-    accessToken: CONTENTFUL_TOKEN
+    accessToken: env.CONTENTFUL_TOKEN
 })
