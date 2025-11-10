@@ -51,7 +51,7 @@
 
             <a href="/blog/{post.id}/{post.slug}" class="group flex flex-col gap-4 border border-gray-200 p-4 rounded-md">
 
-                <img src="{post.image.url}?w=686" alt={post.image?.title} class="w-full h-auto rounded-md object-cover"/>
+                <img src="{post.image.url}?w=318" alt={post.image?.title} class="w-full h-auto rounded-md object-cover"/>
 
                 <div class="flex flex-col gap-1">
                     <h2 class="text-lg font-semibold">

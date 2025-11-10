@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import { formatBytes, formatNumber } from '$lib/utils/formatting';
 	import { isChromiumBased } from '$lib/utils/detection';
-    import { VERSION } from 'svelte/compiler';
 
 	let { data, children } = $props();
 	let loading: boolean = $state(true);
