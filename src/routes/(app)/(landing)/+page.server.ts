@@ -2,12 +2,13 @@ import type { Actions } from './$types';
 import { db } from '$lib/server/db';
 import { transfer } from '$lib/server/db/schema';
 import { generateCode } from '$lib/utils/file';
-import { VIRUSTOTAL_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 const VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3/files/"
+const VIRUSTOTAL_API_KEY = env.VIRUSTOTAL_API_KEY;
 
 export const actions = {
-	create: async ({ request }) => {
+	create: async ({ request, platform }) => {
 		const formData = await request.formData();
 
         const filename = formData.get('name')?.toString();
