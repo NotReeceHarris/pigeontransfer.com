@@ -1,7 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { WebRTCReceiver } from '$lib/utils/webrtc';
-    import { goto } from '$app/navigation';
 
     const { data } = $props();
 
@@ -193,6 +192,11 @@
     });
 
 </script>
+
+<svelte:head>
+    <title>Download File - {data.transfer ? data.transfer.filename : 'File Transfer'}</title>
+    <meta name="description" content="Download your file securely using WebRTC peer-to-peer transfer." />
+</svelte:head>
 
 {#if data.error}
     <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">

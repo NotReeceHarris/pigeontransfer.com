@@ -378,6 +378,11 @@
 
 </script>
 
+<svelte:head>
+    <title>Send File - Pigeon Transfer</title>
+    <meta name="description" content="Send files directly to others using peer-to-peer WebRTC technology. No uploads, no storage, just direct transfers." />
+</svelte:head>
+
 <form action="?/create" method="post" use:enhance={handleCreate} class="bg-white border border-gray-200 rounded-lg p-6 flex flex-col gap-4">
 
     {#if file}

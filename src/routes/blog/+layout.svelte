@@ -12,7 +12,7 @@
     
     <div class="flex flex-col md:flex-row justify-between mb-2 gap-4">
         <div class="flex flex-col gap-2">
-            <a href="/">
+            <a href="/blog">
                 <h1 class="text-3xl font-semibold">
                     pigeontransfer.com/blog
                 </h1>

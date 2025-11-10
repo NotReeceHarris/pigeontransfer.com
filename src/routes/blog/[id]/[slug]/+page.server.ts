@@ -28,9 +28,17 @@ export const load = async ({ params }) => {
     return {
         post: {
             id: post.sys.id,
+
+            banner: post.fields.banner?.fields || null,
             title: title,
             description: post.fields.description?.toString() || '',
             content: post.fields.content.toString(),
+
+            aiDetails: {
+                isAiGenerated: post.fields.aiGenerated || false,
+                isAiEnhanced: post.fields.aiEnhanced || false,
+                aiTools: `${post.fields.aiTools}`
+            }
         }
     }
 };

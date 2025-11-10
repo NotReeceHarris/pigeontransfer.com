@@ -41,6 +41,7 @@
     "brotli-wasm": "^3.0.1",
     "contentful": "^11.8.11",
     "marked": "^17.0.0",
+    "moment": "^2.30.1",
     "slugify": "^1.6.6"
   }
 }

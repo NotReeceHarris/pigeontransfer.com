@@ -2,16 +2,16 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { onMount } from 'svelte';
 	import { formatBytes, formatNumber } from '$lib/utils/formatting';
+	import { isChromiumBased } from '$lib/utils/detection';
 
 	let { data, children } = $props();
-	let isSupported: boolean = $state(true)
+	let loading: boolean = $state(true);
+	let isSupported: boolean = $state(false)
 
-	onMount(() => {
-		const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
-
-		if (!isChrome) {
-			isSupported = true;
-		}
+	onMount(async () => {
+		isSupported = await isChromiumBased();
+		console.log({ isSupported });
+		loading = false;
 	})
 
 	const figures = [
@@ -60,13 +60,28 @@
 		</a>
 	</div>
 
-	{#if isSupported}
-		{@render children?.()}
-	{:else}
-		<div class="flex flex-col bg-red-100 border border-red-400 text-red-700 px-4 pt-3 pb-4 rounded relative" role="alert">
-			<strong class="font-bold">Unsupported Browser!</strong>
-			<span class="block sm:inline">We are working on supporting your browser, however for now if you want to use this service please use google chrome</span>
+	{#if loading}
+
+		<div class="w-full flex justify-center py-20">
+			<svg class="size-5 animate-spin text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
 		</div>
+
+	{:else}
+
+		{#if isSupported}
+			{@render children?.()}
+		{:else}
+			<div class="flex flex-col bg-red-100 border border-red-400 text-red-700 px-4 pt-3 pb-4 rounded relative" role="alert">
+				<strong class="font-bold">Unsupported Browser!</strong>
+				<span class="block sm:inline">
+					We are working on supporting your browser, however for now if you want to use this service please use a chromium based browser like 
+					<a class="underline" href="https://www.google.co.uk/chrome/" target="_blank">
+						Google Chrome
+					</a>.
+				</span>
+			</div>
+		{/if}
+
 	{/if}
 
 	<div class="flex flex-col md:flex-row gap-4">
