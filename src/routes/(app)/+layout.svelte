@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { formatBytes, formatNumber } from '$lib/utils/formatting';
 	import { isChromiumBased } from '$lib/utils/detection';
+    import { VERSION } from 'svelte/compiler';
 
 	let { data, children } = $props();
 	let loading: boolean = $state(true);
@@ -39,11 +40,16 @@
 		
 	<div class="flex flex-col md:flex-row justify-between mb-2 gap-4">
 		<div class="flex flex-col gap-2">
-			<a href="/">
-				<h1 class="text-3xl font-semibold">
-					pigeontransfer.com
-				</h1>
-			</a>
+			<div class="flex gap-3 place-items-center">
+				<a href="/">
+					<h1 class="text-3xl font-semibold">
+						pigeontransfer.com
+					</h1>
+				</a>
+				<a href="https://github.com/NotReeceHarris/pigeontransfer.com" target="_blank" class="mt-1 py-0.5 pl-1.5 pr-2 rounded-md bg-blue-300/30 border border-blue-500/30 text-blue-700 text-xs">
+					v{__APP_VERSION__}
+				</a>
+			</div>
 			<p class="text-lg text-gray-600">
 				Secure per-to-per file transfer made simple.
 			</p>
