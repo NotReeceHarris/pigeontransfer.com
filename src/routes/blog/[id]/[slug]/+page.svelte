@@ -46,7 +46,7 @@
             published: {createdAt.format('MMMM Do, YYYY').toLowerCase()}
         </span>
 
-        {#if data.post.createdAt !== data.post.updatedAt}
+        {#if data.post.created !== data.post.updated}
 
             <span class="text-md">•</span>
             <span>
