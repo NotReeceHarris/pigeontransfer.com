@@ -1,7 +1,6 @@
 import { db } from '$lib/server/db';
 import { transfer } from '$lib/server/db/schema';
 import { count, eq, sql } from 'drizzle-orm';
-import { bytes } from 'drizzle-orm/gel-core';
 
 // Simple in-memory cache for statistics.
 // memory doesn't replicate across server 
