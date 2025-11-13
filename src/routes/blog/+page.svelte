@@ -23,7 +23,7 @@
                 {featured.title}
             </h2>
             <div class="flex place-items-center gap-2 text-xs text-gray-500">
-                <span>
+                <span class="capitalize">
                     {moment(featured.created).format('MMMM Do, YYYY').toLowerCase()}
                 </span>
 
