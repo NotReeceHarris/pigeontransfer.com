@@ -85,10 +85,11 @@
 					</a>.
 				</span>
 
-				<button class="w-fit underline pt-3 cursor-pointer" onclick={() => {
+				<button class="w-fit pt-3 cursor-pointer flex place-items-center gap-2" onclick={() => {
 					isSupported = true
 				}}>
-					Continue anyway
+					<span class="underline">Continue anyway</span>
+					<svg class="size-4 mt-1" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256"><path opacity="1" d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"></path></svg>
 				</button>
 			</div>
 		{/if}
