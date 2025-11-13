@@ -84,6 +84,12 @@
 						Google Chrome
 					</a>.
 				</span>
+
+				<button class="w-fit underline pt-3 cursor-pointer" onclick={() => {
+					isSupported = true
+				}}>
+					Continue anyway
+				</button>
 			</div>
 		{/if}
 
