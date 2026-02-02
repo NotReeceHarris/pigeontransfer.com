@@ -18,7 +18,7 @@
                 </h1>
             </a>
             <p class="text-lg text-gray-600">
-                Secure per-to-per file transfer made simple.
+                Secure peer-to-peer file transfer made simple.
             </p>
         </div>
 
