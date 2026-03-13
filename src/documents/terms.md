@@ -138,7 +138,7 @@ We may terminate or suspend your access to the service immediately, without prio
 
 ## 13. Governing Law
 
-These terms shall be governed by and construed in accordance with the laws of [Your Jurisdiction], without regard to its conflict of law provisions.
+These terms shall be governed by and construed in accordance with the laws of the United Kingdom, without regard to its conflict of law provisions.
 
 ## 14. Contact Information
 
